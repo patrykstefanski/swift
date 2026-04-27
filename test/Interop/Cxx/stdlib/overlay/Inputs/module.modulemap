@@ -10,6 +10,12 @@ module CustomIterator {
   export *
 }
 
+module CustomIteratorADL {
+  header "custom-iterator-adl.h"
+  requires cplusplus
+  export *
+}
+
 module CustomSequence {
   header "custom-sequence.h"
   header "custom-collection.h"
