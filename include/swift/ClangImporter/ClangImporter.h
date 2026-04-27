@@ -357,6 +357,15 @@ public:
 
   FuncDecl *getCXXSynthesizedOperatorFunc(FuncDecl *decl);
 
+  /// Resolve a conformance operator ('==', '-' or '+=') for the given
+  /// imported C++ type, re-resolving it with the exact recipes conformance
+  /// derivation uses. Operators the importer finds or synthesizes via Clang
+  /// overload resolution may not be serialized as members of their module, so
+  /// deserialization re-resolves them here. Returns null if no such operator
+  /// can be resolved.
+  ValueDecl *getCxxSynthesizedConformanceOperator(const DeclBaseName &name,
+                                                  NominalTypeDecl *selfType);
+
   /// Just like Decl::getClangNode() except we look through to the 'Code'
   /// enum of an error wrapper struct.
   ClangNode getEffectiveClangNode(const Decl *decl) const override;
@@ -832,12 +841,6 @@ bool isCFTypeDecl(const clang::TypedefNameDecl *Decl);
 /// Determine the imported CF type for the given typedef-name, or the empty
 /// string if this is not an imported CF type name.
 llvm::StringRef getCFTypeName(const clang::TypedefNameDecl *decl);
-
-/// Lookup and return the synthesized conformance operator like '==' '-' or '+='
-/// for the given type.
-ValueDecl *getImportedMemberOperator(const DeclBaseName &name,
-                                     NominalTypeDecl *selfType,
-                                     std::optional<Type> parameterType);
 
 /// Map the access specifier of a Clang record member to a Swift access level.
 ///

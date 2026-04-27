@@ -707,6 +707,24 @@ public:
 
   llvm::SmallPtrSet<const clang::Decl *, 1> synthesizedAndAlwaysVisibleDecls;
 
+  /// Cache of C++ binary operators resolved via Clang overload resolution for
+  /// conformance derivation, keyed by (binary operator kind, canonical lhs
+  /// type, canonical rhs type) -- the resolution is fully determined by the
+  /// operand shape, so the record being conformed is deliberately not part of
+  /// the key. The value holds the operator usable from Swift and the Clang
+  /// function whose return type is the operator's return type (the resolved
+  /// callee, or the synthesized forwarding wrapper if one was needed). Only
+  /// successful, validated resolutions are cached; the same key must always
+  /// resolve to the same declaration, which deserialization relies on when it
+  /// re-resolves cross-referenced operators. Failed resolutions are
+  /// deliberately not cached: importing another Clang module can introduce
+  /// new ADL candidates for the same operand types, so a negative cache would
+  /// need an invalidation story.
+  llvm::DenseMap<
+      std::tuple<unsigned, const clang::Type *, const clang::Type *>,
+      std::pair<ValueDecl *, const clang::FunctionDecl *>>
+      resolvedCxxOperators;
+
   /// For virtual methods of foreign reference types, whenever a virtual thunk
   /// is generated, keep track of the original C++ method.
   llvm::DenseMap<const FuncDecl *, FuncDecl *> virtualThunkToOriginal;

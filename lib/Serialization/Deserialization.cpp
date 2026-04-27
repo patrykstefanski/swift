@@ -2235,21 +2235,28 @@ ModuleFile::resolveCrossReference(ModuleID MID, uint32_t pathLen) {
     filterValues(filterTy, nullptr, nullptr, isType, inProtocolExt,
                  importedFromClang, isStatic, std::nullopt, values);
     if (values.empty() && importedFromClang && name.isOperator() && filterTy) {
-      // This could be a Clang-importer instantiated/synthesized conformance
-      // operator, like '==', '-' or '+=', that are required for conformances to
-      // one of the Cxx iterator protocols. Attempt to resolve it using clang importer
-      // lookup logic for the given type instead of looking for it in the module.
+      // This could be a Clang-importer synthesized conformance operator, like
+      // '==', '-' or '+=', required for conformances to one of the Cxx
+      // iterator protocols. Attempt to re-resolve it through the Clang
+      // importer instead of looking for it in the module.
       if (auto *fty = dyn_cast<AnyFunctionType>(filterTy.getPointer())) {
-        if (fty->getNumParams()) {
-          assert(fty->getNumParams() <= 2);
+        // The importer's conformance operators are all binary, so their
+        // serialized type has exactly two parameters, with the conforming
+        // type as the left operand.
+        if (fty->getNumParams() == 2) {
           auto p = fty->getParams()[0].getParameterType();
           if (auto sty = dyn_cast<NominalType>(p.getPointer())) {
-            if (auto *op = importer::getImportedMemberOperator(
-                    name, sty->getDecl(),
-                    fty->getNumParams() > 1
-                        ? fty->getParams()[1].getParameterType()
-                        : std::optional<Type>{}))
+            auto *clangImporter = static_cast<ClangImporter *>(
+                getContext().getClangModuleLoader());
+            if (auto *op = clangImporter->getCxxSynthesizedConformanceOperator(
+                    name, sty->getDecl())) {
               values.push_back(op);
+              // If the re-resolved operator doesn't match the serialized
+              // type, drop it so this resolves to a clean cross-reference
+              // error rather than binding a wrong declaration.
+              filterValues(filterTy, nullptr, nullptr, isType, inProtocolExt,
+                           importedFromClang, isStatic, std::nullopt, values);
+            }
           }
         }
       }
