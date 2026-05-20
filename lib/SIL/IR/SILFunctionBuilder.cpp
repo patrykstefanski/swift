@@ -173,7 +173,13 @@ void SILFunctionBuilder::addFunctionAttributes(
   }
 
   // @_silgen_name and @_cdecl functions may be called from C code somewhere.
-  if (Attrs.hasAttribute<SILGenNameAttr>() || Attrs.hasAttribute<CDeclAttr>())
+  // A @cxx function is the body of a C++ function and is likewise called from
+  // C++ (a foreign language the Swift compiler can't see). Mark it as having
+  // foreign references too, so the optimizer treats it as externally
+  // referenced and does not eliminate or internalize a non-public @cxx
+  // function that happens to have no Swift callers.
+  if (Attrs.hasAttribute<SILGenNameAttr>() || Attrs.hasAttribute<CDeclAttr>() ||
+      Attrs.hasAttribute<CxxDeclAttr>())
     F->setHasCReferences(true);
 
   for (auto *EA : Attrs.getAttributes<ExposeAttr>()) {

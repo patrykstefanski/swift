@@ -927,7 +927,14 @@ SIMPLE_DECL_ATTR(_hasHiddenStoredProperties, HasHiddenStoredProperties,
   OnStruct,
   UserInaccessible | ABIBreakingToAdd | ABIBreakingToRemove | APIStableToAdd | APIStableToRemove | ForbiddenInABIAttr,
   175)
-LAST_DECL_ATTR(HasHiddenStoredProperties)
+
+DECL_ATTR(cxx, CxxDecl,
+  OnFunc | OnAccessor,
+  LongAttribute | ABIBreakingToAdd | ABIBreakingToRemove | APIStableToAdd | APIStableToRemove | ForbiddenInABIAttr,
+  176)
+DECL_ATTR_FEATURE_REQUIREMENT(CxxDecl, CxxImplementation)
+
+LAST_DECL_ATTR(CxxDecl)
 
 #undef DECL_ATTR_ALIAS
 #undef CONTEXTUAL_DECL_ATTR_ALIAS

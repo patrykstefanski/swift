@@ -208,6 +208,13 @@ BridgedCDeclAttr BridgedCDeclAttr_createParsed(BridgedASTContext cContext,
                 /*Implicit=*/false, /*Underscored*/ underscored);
 }
 
+BridgedCxxDeclAttr BridgedCxxDeclAttr_createParsed(BridgedASTContext cContext,
+                                                   SourceLoc atLoc,
+                                                   SourceRange range) {
+  return new (cContext.unbridged())
+      CxxDeclAttr(atLoc, range, /*Implicit=*/false);
+}
+
 BridgedCustomAttr BridgedCustomAttr_createParsed(
     SourceLoc atLoc, BridgedTypeRepr cType, BridgedDeclContext cDeclContext,
     BridgedNullableCustomAttributeInitializer cInitContext,

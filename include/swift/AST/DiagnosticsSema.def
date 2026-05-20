@@ -2153,6 +2153,28 @@ ERROR(cdecl_incompatible_with_objc,none,
       "cannot apply both '@c' and '@objc' to %kindonly0",
       (const Decl *))
 
+// @cxx
+//
+// `@cxx` requires C++ interoperability, which is NOT a plain
+// `-enable-experimental-feature` flag: it is turned on with
+// `-cxx-interoperability-mode=` (or the older `-enable-experimental-cxx-interop`).
+// This diagnostic spells that out so users are pointed at the right flag.
+ERROR(cxx_attr_requires_cxx_interop,none,
+      "'%0' requires C++ interoperability; enable it with "
+      "'-cxx-interoperability-mode=default' or "
+      "'-enable-experimental-cxx-interop'", (StringRef))
+// `@cxx` and `@objc` both request a foreign entry point but for different,
+// incompatible languages; reject the combination (mirrors @c + @objc).
+ERROR(cxx_incompatible_with_objc,none,
+      "cannot apply both '@cxx' and '@objc' to %kindonly0",
+      (const Decl *))
+// `@cxx` and `@c`/`@_cdecl` both pick a foreign linkage/symbol but disagree
+// about the language (C vs C++); without this they would be resolved
+// inconsistently across compiler phases, so reject the combination outright.
+ERROR(cxx_incompatible_with_cdecl,none,
+      "cannot apply both '@cxx' and %0 to %kindonly1",
+      (DeclAttribute, const Decl *))
+
 // @used and @section
 ERROR(section_empty_name,none,
       "'@section' section name cannot be empty", ())
@@ -5802,7 +5824,7 @@ ERROR(main_function_must_be_mainActor,none,
       "main() must be '@MainActor'", ())
 
 // Keep aligned with enum ForeignLanguage
-#define FOREIGN_LANG_SELECT "select{C|Objective-C}"
+#define FOREIGN_LANG_SELECT "select{C|C++|Objective-C}"
 
 ERROR(not_objc_function_async,none,
       "'async' %kindonly0 cannot be represented in Objective-C",

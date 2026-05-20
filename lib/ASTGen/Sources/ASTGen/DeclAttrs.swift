@@ -138,6 +138,8 @@ extension ASTGenVisitor {
         return self.generateBackDeployedAttr(attribute: node).forEach { handle($0.asDeclAttribute) }
       case .CDecl:
         return handle(self.generateCDeclAttr(attribute: node)?.asDeclAttribute)
+      case .CxxDecl:
+        return handle(self.generateCxxDeclAttr(attribute: node)?.asDeclAttribute)
       case .Derivative:
         return handle(self.generateDerivativeAttr(attribute: node)?.asDeclAttribute)
       case .Differentiable:
@@ -593,6 +595,14 @@ extension ASTGenVisitor {
       range: self.generateAttrSourceRange(node),
       name: name ?? "",
       underscored: underscored
+    )
+  }
+
+  func generateCxxDeclAttr(attribute node: AttributeSyntax) -> BridgedCxxDeclAttr? {
+    return .createParsed(
+      self.ctx,
+      atLoc: self.generateSourceLoc(node.atSign),
+      range: self.generateAttrSourceRange(node)
     )
   }
 

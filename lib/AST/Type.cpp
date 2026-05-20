@@ -3305,12 +3305,13 @@ getForeignRepresentable(Type type, ForeignLanguage language,
   if (nominal->hasClangNode() || nominal->isObjC()) {
     switch (language) {
     case ForeignLanguage::C:
-      // Imported classes and protocols are not representable in C.
+    case ForeignLanguage::Cxx:
+      // Imported classes and protocols are not representable in C or C++.
       if (isa<ClassDecl>(nominal) || isa<ProtocolDecl>(nominal))
         return failure();
 
-      // @objc enums are not representable in C, @c ones and imported ones
-      // are ok.
+      // @objc enums are not representable in C or C++; @c ones and types
+      // imported from Clang are ok.
       if (!nominal->hasClangNode())
         return failure();
 

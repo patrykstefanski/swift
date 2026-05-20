@@ -3104,6 +3104,13 @@ ParserStatus Parser::parseNewDeclAttribute(DeclAttributes &Attributes,
     break;
   }
 
+  case DeclAttrKind::CxxDecl: {
+    AttrRange = SourceRange(Loc);
+    Attributes.add(new (Context) CxxDeclAttr(AtLoc, AttrRange,
+                                             /*Implicit=*/false));
+    break;
+  }
+
   case DeclAttrKind::CDecl: {
     if (AttrName == "c") {
       std::optional<StringRef> CName;

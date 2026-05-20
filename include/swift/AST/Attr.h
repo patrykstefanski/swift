@@ -778,6 +778,28 @@ public:
   }
 };
 
+/// Defines the @cxx attribute.
+class CxxDeclAttr : public DeclAttribute {
+public:
+  CxxDeclAttr(SourceLoc AtLoc, SourceRange Range, bool Implicit)
+      : DeclAttribute(DeclAttrKind::CxxDecl, AtLoc, Range, Implicit) {}
+
+  CxxDeclAttr(bool Implicit)
+      : CxxDeclAttr(SourceLoc(), SourceRange(), Implicit) {}
+
+  static bool classof(const DeclAttribute *DA) {
+    return DA->getKind() == DeclAttrKind::CxxDecl;
+  }
+
+  CxxDeclAttr *clone(ASTContext &ctx) const {
+    return new (ctx) CxxDeclAttr(AtLoc, Range, isImplicit());
+  }
+
+  bool isEquivalent(const CxxDeclAttr *other, Decl *attachedTo) const {
+    return true;
+  }
+};
+
 /// Defines the @_semantics attribute.
 class SemanticsAttr : public DeclAttribute {
 public:

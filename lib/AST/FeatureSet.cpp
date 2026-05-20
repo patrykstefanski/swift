@@ -491,6 +491,7 @@ UNINTERESTING_FEATURE(SafeInteropWrappers)
 UNINTERESTING_FEATURE(AssumeResilientCxxTypes)
 UNINTERESTING_FEATURE(ImportNonPublicCxxMembers)
 UNINTERESTING_FEATURE(ImportCxxMembersLazily)
+UNINTERESTING_FEATURE(CxxImplementation)
 UNINTERESTING_FEATURE(CoroutineAccessorsUnwindOnCallerError)
 UNINTERESTING_FEATURE(AllowRuntimeSymbolDeclarations)
 

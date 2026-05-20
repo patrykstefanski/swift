@@ -51,6 +51,9 @@
 #include "swift/AST/Types.h"
 #include "swift/Basic/Assertions.h"
 #include "swift/Basic/SourceLoc.h"
+// For importer::isClangNamespace, used to allow @cxx on functions declared in
+// Swift extensions of imported C++ namespaces (which import as enums).
+#include "swift/ClangImporter/ClangImporter.h"
 #include "swift/Parse/Lexer.h"
 #include "swift/Parse/ParseDeclName.h"
 #include "swift/Sema/IDETypeChecking.h"
@@ -417,6 +420,7 @@ public:
   void visitAvailableAttr(AvailableAttr *attr);
 
   void visitCDeclAttr(CDeclAttr *attr);
+  void visitCxxDeclAttr(CxxDeclAttr *attr);
   void visitExposeAttr(ExposeAttr *attr);
   void visitExternAttr(ExternAttr *attr);
   void visitUsedAttr(UsedAttr *attr);
@@ -1780,6 +1784,8 @@ visitObjCImplementationAttr(ObjCImplementationAttr *attr) {
     D->getAttrs().getAttribute<ObjCAttr>(/*AllowInvalid=*/true);
   if (!langAttr)
     langAttr = D->getAttrs().getAttribute<CDeclAttr>(/*AllowInvalid=*/true);
+  if (!langAttr)
+    langAttr = D->getAttrs().getAttribute<CxxDeclAttr>(/*AllowInvalid=*/true);
 
   if (!langAttr) {
     diagnose(attr->getLocation(), diag::attr_implementation_requires_language);
@@ -2444,6 +2450,51 @@ void AttributeChecker::visitCDeclAttr(CDeclAttr *attr) {
   if (D->getAttrs().getAttribute<ObjCAttr>()) {
     diagnose(attr->getLocation(), diag::cdecl_incompatible_with_objc, D);
   }
+}
+
+void AttributeChecker::visitCxxDeclAttr(CxxDeclAttr *attr) {
+  // @cxx may appear on a global function or on a function declared in a Swift
+  // extension of an imported C++ *namespace* (namespaces import as enums, and
+  // such an extension is technically a "type context"). It may NOT appear on a
+  // method of a real type (class/struct/actual enum): implementing C++ methods
+  // in Swift is out of scope for the initial feature. So we reject type
+  // contexts EXCEPT clang namespaces. (`isClangNamespace` returns false for
+  // ordinary Swift/imported types, so methods are still rejected, matching the
+  // `@c` behavior the existing tests check for.)
+  auto *dc = D->getDeclContext();
+  if (dc->isTypeContext() && !importer::isClangNamespace(dc))
+    diagnose(attr->getLocation(), diag::cdecl_not_at_top_level, attr);
+
+  // @cxx fundamentally relies on C++ interop (clang's C++ mangler, imported
+  // C++ types, etc.). That is enabled via `-cxx-interoperability-mode=` /
+  // `-enable-experimental-cxx-interop`, NOT via a plain experimental-feature
+  // flag, so emit a diagnostic that names the correct option. (The separate
+  // requirement that the `CxxImplementation` experimental feature be enabled is
+  // enforced by DECL_ATTR_FEATURE_REQUIREMENT in DeclAttr.def.)
+  if (!Ctx.LangOpts.EnableCXXInterop)
+    diagnose(attr->getLocation(), diag::cxx_attr_requires_cxx_interop,
+             attr->getAttrName());
+
+  // The standard library / runtime reserve a set of symbol names; a @cxx
+  // function that emits one of them would clobber a runtime entry point. This
+  // mirrors the identical check in visitCDeclAttr.
+  auto VD = dyn_cast<ValueDecl>(D);
+  if (VD && !canDeclareSymbolName(VD->getCDeclName(), D->getModuleContext()))
+    diagnose(attr->getLocation(), diag::reserved_runtime_symbol_name,
+             VD->getCDeclName());
+
+  // @cxx and @objc both request a foreign entry point, but for different and
+  // incompatible languages (C++ vs Objective-C). Reject the combination, just
+  // as visitCDeclAttr rejects @c + @objc.
+  if (D->getAttrs().getAttribute<ObjCAttr>())
+    diagnose(attr->getLocation(), diag::cxx_incompatible_with_objc, D);
+
+  // @cxx and @c/@_cdecl disagree about the foreign language and would be
+  // resolved inconsistently across compiler phases (getCDeclKind() prefers
+  // @cxx, while symbol/name lowering prefers @c). Reject the combination rather
+  // than silently pick one.
+  if (auto *cAttr = D->getAttrs().getAttribute<CDeclAttr>())
+    diagnose(attr->getLocation(), diag::cxx_incompatible_with_cdecl, cAttr, D);
 }
 
 void AttributeChecker::visitExposeAttr(ExposeAttr *attr) {

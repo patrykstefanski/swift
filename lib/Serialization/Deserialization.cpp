@@ -6109,6 +6109,14 @@ llvm::Error DeclDeserializer::deserializeDeclCommon() {
         break;
       }
 
+      case decls_block::CxxDecl_DECL_ATTR: {
+        bool isImplicit;
+        serialization::decls_block::CxxDeclDeclAttrLayout::readRecord(
+            scratch, isImplicit);
+        Attr = new (ctx) CxxDeclAttr(isImplicit);
+        break;
+      }
+
       case decls_block::Alignment_DECL_ATTR: {
         bool isImplicit;
         unsigned alignment;
