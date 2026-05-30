@@ -6703,6 +6703,33 @@ static void lookupRelatedFuncs(AbstractFunctionDecl *func,
     NLOptions options = NL_IgnoreAccessControl | NL_IgnoreMissingImports;
     ty->lookupQualified({ ty }, DeclNameRef(swiftName), func->getLoc(),
                         NL_QualifiedDefault | options, results);
+
+    // `lookupQualified` on an imported C++ namespace (which Swift represents as
+    // an enum) returns only the namespace's *Clang* members, not the members
+    // added by Swift extensions of that enum. As a result, an
+    // `@cxx @implementation` function written in such an extension is not
+    // rediscovered here, even though it is a member of `ty` -- so the
+    // classification below would find the imported interface but no Swift
+    // implementation to pair with it, and matching would spuriously fail with
+    // "could not find imported function".
+    //
+    // The decl we are matching for is, by definition, related to itself (same
+    // name, same context), so make sure it is part of the candidate set. We do
+    // this only for functions in C++ namespaces, which is where `@cxx
+    // @implementation` lives and where the lookup gap above bites. (The
+    // analogous gap for import-as-member functions in extensions of imported
+    // C/Objective-C types is tracked separately by FIXMEs in
+    // test/decl/ext/cdecl_official_implementation.swift; we deliberately do not
+    // change that behavior here.) For an accessor the candidate set holds
+    // storage decls, so add the storage, matching how results are classified
+    // below.
+    if (importer::isClangNamespace(func->getDeclContext())) {
+      ValueDecl *selfDecl = func;
+      if (auto accessor = dyn_cast<AccessorDecl>(func))
+        selfDecl = accessor->getStorage();
+      if (!llvm::is_contained(results, selfDecl))
+        results.push_back(selfDecl);
+    }
   }
   else {
     ASTContext &ctx = func->getASTContext();

@@ -1,36 +1,38 @@
-// Verifies the attribute-checker half of C++ namespace support for `@cxx`.
+// Verifies `@cxx @implementation` for a function declared in an imported C++
+// *namespace*. The namespace imports into Swift as an enum (`mathz`) and the
+// function is implemented in a Swift extension of that enum.
 //
-// A C++ namespace imports into Swift as an enum, and an `extension` of that
-// enum is technically a "type context". The attribute checker used to reject
-// ALL type contexts with "@cxx can only be applied to global functions", which
-// made the documented namespace case (see docs/CxxImplementationDesign.md)
-// unreachable even in principle. `visitCxxDeclAttr` now allows type contexts
-// that are clang namespaces (via `importer::isClangNamespace`), while still
-// rejecting genuine types (classes/structs) — see test/attr/attr_cxx.swift for
-// the rejected case.
-//
-// IMPORTANT (known limitation): the *matching* machinery
-// (`findFunctionInterfaceAndImplementation` / `lookupRelatedFuncs`) does not yet
-// resolve a function declared inside an imported C++ namespace, so the
-// end-to-end `@cxx @implementation` for a namespaced function currently fails
-// with "could not find imported function". The point of THIS test is to lock in
-// that the attribute is no longer rejected for the wrong reason ("global
-// functions only"); wiring up namespace matching is follow-up work. When that
-// lands, the negative expectation below should be removed.
+// This exercises two fixes working together:
+//  * `visitCxxDeclAttr` allows `@cxx` in a clang-namespace type context (it used
+//    to reject every type context with "@cxx can only be applied to global
+//    functions"); and
+//  * `lookupRelatedFuncs` (in ClangImporter) includes the decl being matched in
+//    the candidate set, so the interface/implementation matcher can pair the
+//    Swift implementation with the imported C++ declaration. This is needed
+//    because `lookupQualified` on a namespace enum returns only the namespace's
+//    Clang members, not the members added by Swift extensions.
 
-// RUN: %target-typecheck-verify-swift \
+// RUN: %target-swift-frontend -typecheck -verify %s \
 // RUN:   -enable-experimental-feature CxxImplementation \
 // RUN:   -cxx-interoperability-mode=default \
 // RUN:   -import-objc-header %S/Inputs/cxx_implementation_namespace.h
+//
+// RUN: %target-swift-frontend -emit-ir %s \
+// RUN:   -enable-experimental-feature CxxImplementation \
+// RUN:   -cxx-interoperability-mode=default \
+// RUN:   -import-objc-header %S/Inputs/cxx_implementation_namespace.h \
+// RUN:   | %FileCheck %s
 
 // REQUIRES: swift_feature_CxxImplementation
 
+// Implements the namespaced C++ function `mathz::nsAdd`. No diagnostics: neither
+// the old "@cxx can only be applied to global functions" error (attribute
+// checker fix) nor "could not find imported function" (matcher fix).
 extension mathz {
-  // No "@cxx can only be applied to global functions" error here (that is the
-  // attribute-checker fix). The remaining matching-layer gap surfaces as the
-  // "could not find imported function" diagnostic below.
   @cxx @implementation
   static func nsAdd(_ a: Int32, _ b: Int32) -> Int32 { return a + b }
-  // expected-error @-2 {{could not find imported function 'nsAdd' matching static method 'nsAdd'}}
 }
 
+// The body must be emitted under the Itanium-mangled name of
+// `mathz::nsAdd(int, int)` so the C++ caller links against it.
+// CHECK: define {{.*}}@_ZN5mathz5nsAddEii
