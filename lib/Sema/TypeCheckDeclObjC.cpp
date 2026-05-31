@@ -31,6 +31,7 @@
 #include "swift/Basic/Assertions.h"
 #include "swift/Basic/StringExtras.h"
 
+#include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclObjC.h"
 
 using namespace swift;
@@ -3196,8 +3197,46 @@ bool swift::diagnoseObjCUnsatisfiedOptReqConflicts(SourceFile &sf) {
 }
 
 void TypeChecker::checkObjCImplementation(Decl *D) {
-  if (!D->getImplementedObjCDecl())
+  auto interfaceDecl = D->getImplementedObjCDecl();
+  if (!interfaceDecl)
     return;
+
+  // A `@cxx @implementation` function cannot implement a C++ *virtual* method:
+  // virtual dispatch goes through the class vtable (emitted by C++ via its
+  // key-function rule), so a Swift-provided body would not be reliably reached
+  // and the vtable might never be emitted. Reject it explicitly rather than
+  // silently emit an unreachable symbol. (See docs/CxxImplementationDesign.md.)
+  if (D->getAttrs().hasAttribute<CxxDeclAttr>()) {
+    if (auto *method = dyn_cast_or_null<clang::CXXMethodDecl>(
+            interfaceDecl->getClangDecl())) {
+      if (method->isVirtual()) {
+        D->diagnose(diag::cxx_implementation_virtual_method);
+        return;
+      }
+
+      // A C++ instance method's `this` is always a pointer, so `self` must be
+      // lowered indirectly. Whether the Swift method's self lowers indirectly
+      // depends on its mutability vs. the C++ method's const-ness:
+      //   * const C++ method  -> non-mutating self (`@in_guaranteed`): OK; a
+      //     `mutating` Swift method would mutate a pointer-to-const receiver.
+      //   * non-const C++ method -> only a `mutating` self (`@inout`) is passed
+      //     indirectly; a non-mutating/consuming/borrowing method would pass
+      //     self by value, which cannot form the C++ `this` ABI.
+      // Reject the mismatches so we never emit an ill-formed receiver ABI.
+      if (method->isInstance()) {
+        if (auto *FD = dyn_cast<FuncDecl>(D)) {
+          if (method->isConst() && FD->isMutating()) {
+            D->diagnose(diag::cxx_implementation_mutating_const_method);
+            return;
+          }
+          if (!method->isConst() && !FD->isMutating()) {
+            D->diagnose(diag::cxx_implementation_nonconst_needs_mutating);
+            return;
+          }
+        }
+      }
+    }
+  }
 
   evaluateOrDefault(D->getASTContext().evaluator,
                     TypeCheckObjCImplementationRequest{D},

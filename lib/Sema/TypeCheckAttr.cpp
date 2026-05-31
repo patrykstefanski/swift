@@ -2453,16 +2453,20 @@ void AttributeChecker::visitCDeclAttr(CDeclAttr *attr) {
 }
 
 void AttributeChecker::visitCxxDeclAttr(CxxDeclAttr *attr) {
-  // @cxx may appear on a global function or on a function declared in a Swift
+  // @cxx may appear on a global function, on a function declared in a Swift
   // extension of an imported C++ *namespace* (namespaces import as enums, and
-  // such an extension is technically a "type context"). It may NOT appear on a
-  // method of a real type (class/struct/actual enum): implementing C++ methods
-  // in Swift is out of scope for the initial feature. So we reject type
-  // contexts EXCEPT clang namespaces. (`isClangNamespace` returns false for
-  // ordinary Swift/imported types, so methods are still rejected, matching the
-  // `@c` behavior the existing tests check for.)
+  // such an extension is technically a "type context"), or on a method declared
+  // in a Swift extension of an imported C++ *record* (class/struct) -- this last
+  // case is how a C++ method is implemented in Swift. It may NOT appear on a
+  // method of a Swift-native type (class/struct/actual enum) or of a plain C
+  // struct: there is no C++ declaration to implement. So we reject type contexts
+  // EXCEPT clang namespaces and imported C++ records. (`isClangNamespace` and
+  // `isClangCxxRecord` both return false for ordinary Swift types, so methods on
+  // those are still rejected, matching the `@c` behavior the existing tests
+  // check for.)
   auto *dc = D->getDeclContext();
-  if (dc->isTypeContext() && !importer::isClangNamespace(dc))
+  if (dc->isTypeContext() && !importer::isClangNamespace(dc) &&
+      !importer::isClangCxxRecord(dc))
     diagnose(attr->getLocation(), diag::cdecl_not_at_top_level, attr);
 
   // @cxx fundamentally relies on C++ interop (clang's C++ mangler, imported

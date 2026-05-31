@@ -2174,6 +2174,30 @@ ERROR(cxx_incompatible_with_objc,none,
 ERROR(cxx_incompatible_with_cdecl,none,
       "cannot apply both '@cxx' and %0 to %kindonly1",
       (DeclAttribute, const Decl *))
+// A C++ *virtual* method cannot be implemented in Swift with
+// `@cxx @implementation`: the body would be emitted under the method's mangled
+// symbol, but virtual calls dispatch through the class vtable (which C++ emits
+// via its key-function rule). A Swift-provided body would therefore not be
+// reliably reached, and the vtable might never be emitted. Out of scope; reject.
+ERROR(cxx_implementation_virtual_method,none,
+      "'@cxx @implementation' cannot implement a C++ virtual method",
+      ())
+// A `mutating` Swift method would mutate the receiver, but the C++ method it
+// implements is declared `const` (its `this` is a pointer-to-const, and it is
+// emitted under the `const` mangling). Allowing this would silently emit a
+// receiver-mutating body under a symbol C++ callers treat as non-mutating.
+ERROR(cxx_implementation_mutating_const_method,none,
+      "'mutating' method cannot implement a C++ 'const' method with "
+      "'@cxx @implementation'; declare the method non-mutating",
+      ())
+// The dual of the above: a non-`const` C++ method receives a mutable `this`
+// pointer, lowered as an `inout` self. Only a `mutating` Swift method passes
+// self indirectly to match; a non-mutating (or consuming/borrowing) method
+// would pass self by value, which cannot form the C++ `this` pointer ABI.
+ERROR(cxx_implementation_nonconst_needs_mutating,none,
+      "a non-'const' C++ method must be implemented by a 'mutating' method "
+      "with '@cxx @implementation'",
+      ())
 
 // @used and @section
 ERROR(section_empty_name,none,

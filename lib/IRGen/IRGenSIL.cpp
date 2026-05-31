@@ -2454,6 +2454,39 @@ static void emitEntryPointArgumentsCOrObjC(IRGenSILFunction &IGF,
     nextArgTyIdx = 2;
   }
 
+  // Handle the 'self'/'this' argument of a C++ instance method whose body is
+  // provided in Swift via `@cxx @implementation`. Unlike a Swift method (where
+  // 'self' is the last argument), a C++ instance method takes 'this' as its
+  // *first* argument. In SIL 'self' is still the last formal argument, and the
+  // C++ method conventions pass it indirectly, so it is an address parameter.
+  // Claim 'this' from the front and bind it to the self SIL argument; the loop
+  // below then handles the explicit parameters.
+  if (IGF.CurSILFn->getRepresentation() ==
+        SILFunctionTypeRepresentation::CXXMethod) {
+    // On the Itanium ABI 'this' follows any indirect return (sret), which
+    // emitEntryPointIndirectReturn has already claimed. The Microsoft ABI
+    // places 'this' before the indirect return ("sret after this"), which we do
+    // not yet support for Swift-emitted C++ method bodies. (isSRetAfterThis may
+    // only be queried when the return is actually indirect.)
+    assert((!FI.getReturnInfo().isIndirect() ||
+            !FI.getReturnInfo().isSRetAfterThis()) &&
+           "C++ method body emission with sret-after-this is not supported");
+
+    SILArgument *selfArg = args.back();
+    args = args.slice(0, args.size() - 1);
+    assert(selfArg->getType().isAddress() &&
+           "C++ instance method self should be lowered indirectly");
+
+    auto &selfTI = IGF.getTypeInfo(selfArg->getType());
+    llvm::Value *thisPtr = params.claimNext();
+    thisPtr = IGF.Builder.CreateBitCast(thisPtr, IGF.IGM.PtrTy);
+    IGF.setLoweredAddress(selfArg, Address(thisPtr, selfTI.getStorageType(),
+                                           selfTI.getBestKnownAlignment()));
+
+    // Skip the leading 'this' clang argument when emitting explicit parameters.
+    nextArgTyIdx = 1;
+  }
+
   assert(args.size() == (FI.arg_size() - nextArgTyIdx) &&
          "Number of arguments not equal to number of argument types!");
 

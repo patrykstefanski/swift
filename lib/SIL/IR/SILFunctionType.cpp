@@ -4396,11 +4396,45 @@ static CanSILFunctionType getSILFunctionTypeForAbstractCFunction(
                             constant, std::nullopt, ProtocolConformanceRef());
 }
 
+/// If \p decl is a Swift function that provides the body for an imported C++
+/// *instance* method via `@cxx @implementation` (so it has no clang declaration
+/// of its own, but the interface it implements -- returned by
+/// getImplementedObjCDecl() -- is a C++ instance method), return that
+/// clang::CXXMethodDecl. Otherwise return null.
+///
+/// This lets the body be lowered with the same `this`-first calling convention
+/// (CXXMethodConventions / CXXMethod representation) as an imported C++ method,
+/// so the symbol Swift emits matches the C++ ABI a C++ caller expects. Static
+/// methods are intentionally excluded: they have no `this` and lower correctly
+/// through the plain CFunctionPointer path. Constructors and destructors are
+/// also excluded (different mangling/semantics, out of scope).
+static const clang::CXXMethodDecl *
+getImplementedCXXInstanceMethod(const ValueDecl *decl) {
+  if (decl->getClangDecl())
+    return nullptr;
+  auto *interface = decl->getImplementedObjCDecl();
+  if (!interface)
+    return nullptr;
+  auto *method =
+      dyn_cast_or_null<clang::CXXMethodDecl>(interface->getClangDecl());
+  if (!method || method->isStatic() ||
+      isa<clang::CXXConstructorDecl>(method) ||
+      isa<clang::CXXDestructorDecl>(method))
+    return nullptr;
+  return method;
+}
+
 /// Try to find a clang method declaration for the given function.
 static const clang::Decl *findClangMethod(ValueDecl *method) {
   if (auto *methodFn = dyn_cast<FuncDecl>(method)) {
     if (auto *decl = methodFn->getClangDecl())
       return decl;
+
+    // A Swift function that implements an imported C++ instance method via
+    // `@cxx @implementation` has no clang decl of its own; lower it using the
+    // C++ method it implements so its `this`/self ABI matches the C++ caller.
+    if (auto *cxxMethod = getImplementedCXXInstanceMethod(methodFn))
+      return cxxMethod;
 
     if (auto overridden = methodFn->getOverriddenDecl())
       return findClangMethod(overridden);
@@ -4752,6 +4786,13 @@ TypeConverter::getDeclRefRepresentation(SILDeclRef c) {
   if (c.isForeign) {
     if (!c.hasDecl())
       return SILFunctionTypeRepresentation::CFunctionPointer;
+
+    // A Swift function that implements an imported C++ instance method via
+    // `@cxx @implementation` has no clang decl of its own, but must be lowered
+    // with the C++ method calling convention so `self` is passed as the leading
+    // `this` pointer (matching the C++ ABI a C++ caller expects).
+    if (getImplementedCXXInstanceMethod(c.getDecl()))
+      return SILFunctionTypeRepresentation::CXXMethod;
 
     if (auto clangDecl = c.getDecl()->getClangDecl()) {
       if (auto method = dyn_cast<clang::CXXMethodDecl>(clangDecl)) {
@@ -5246,6 +5287,18 @@ getAbstractionPatternForConstant(TypeConverter &converter, ASTContext &ctx,
 
   const clang::Decl *clangDecl = bridgedFn->getClangDecl();
   if (!clangDecl) {
+    // A Swift function implementing an imported C++ instance method via
+    // `@cxx @implementation`: use the C++ method's abstraction pattern so the
+    // `this`/self parameter and the formal parameters are lowered with the C++
+    // method ABI (rather than as a plain C function with a trailing self).
+    if (auto *cxxMethod = getImplementedCXXInstanceMethod(bridgedFn)) {
+      if (numParameterLists == 2)
+        return AbstractionPattern::getCurriedCXXMethod(
+            fnType, cxxMethod, bridgedFn->getImportAsMemberStatus());
+      return AbstractionPattern::getCXXMethod(
+          fnType, cxxMethod, bridgedFn->getImportAsMemberStatus());
+    }
+
     // If this function only has a C entrypoint, create a Clang type to
     // use when referencing it.
     if (bridgedFn->hasOnlyCEntryPoint()) {

@@ -833,6 +833,16 @@ bool declIsCxxOnly(const Decl *decl);
 /// Is this DeclContext an `enum` that represents a C++ namespace?
 bool isClangNamespace(const DeclContext *dc);
 
+/// Is this DeclContext a nominal type (struct/class) imported from a C++
+/// `class`/`struct` (i.e. backed by a `clang::CXXRecordDecl`)?
+///
+/// This is the record analogue of `isClangNamespace`: it identifies the
+/// contexts in which a Swift `extension` can host a `@cxx @implementation`
+/// member that implements a C++ method. Plain C structs (backed by a
+/// `clang::RecordDecl` that is not a `CXXRecordDecl`) return false, since they
+/// have no C++ method mangling.
+bool isClangCxxRecord(const DeclContext *dc);
+
 /// For some \a templatedClass that inherits from \a base, whether they are
 /// derived from the same class template.
 ///

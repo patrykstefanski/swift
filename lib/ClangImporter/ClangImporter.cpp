@@ -6715,15 +6715,20 @@ static void lookupRelatedFuncs(AbstractFunctionDecl *func,
     //
     // The decl we are matching for is, by definition, related to itself (same
     // name, same context), so make sure it is part of the candidate set. We do
-    // this only for functions in C++ namespaces, which is where `@cxx
-    // @implementation` lives and where the lookup gap above bites. (The
-    // analogous gap for import-as-member functions in extensions of imported
-    // C/Objective-C types is tracked separately by FIXMEs in
-    // test/decl/ext/cdecl_official_implementation.swift; we deliberately do not
-    // change that behavior here.) For an accessor the candidate set holds
-    // storage decls, so add the storage, matching how results are classified
-    // below.
-    if (importer::isClangNamespace(func->getDeclContext())) {
+    // this for functions in C++ namespaces and for methods in extensions of
+    // imported C++ records (class/struct) -- both are where `@cxx
+    // @implementation` lives. For records the lookup gap above does not
+    // generally bite (qualified lookup on a record merges Clang members and
+    // Swift-extension members), but adding the decl is harmless thanks to the
+    // `is_contained` guard below, so we keep the two cases uniform and robust to
+    // lookup-table ordering. (The analogous gap for import-as-member functions
+    // in extensions of imported C/Objective-C types is tracked separately by
+    // FIXMEs in test/decl/ext/cdecl_official_implementation.swift; we
+    // deliberately do not change that behavior here.) For an accessor the
+    // candidate set holds storage decls, so add the storage, matching how
+    // results are classified below.
+    if (importer::isClangNamespace(func->getDeclContext()) ||
+        importer::isClangCxxRecord(func->getDeclContext())) {
       ValueDecl *selfDecl = func;
       if (auto accessor = dyn_cast<AccessorDecl>(func))
         selfDecl = accessor->getStorage();
@@ -9270,6 +9275,13 @@ bool importer::declIsCxxOnly(const Decl *decl) {
 bool importer::isClangNamespace(const DeclContext *dc) {
   if (const auto *ed = dc->getSelfEnumDecl())
     return isa_and_nonnull<clang::NamespaceDecl>(ed->getClangDecl());
+
+  return false;
+}
+
+bool importer::isClangCxxRecord(const DeclContext *dc) {
+  if (const auto *nominal = dc->getSelfNominalTypeDecl())
+    return isa_and_nonnull<clang::CXXRecordDecl>(nominal->getClangDecl());
 
   return false;
 }
