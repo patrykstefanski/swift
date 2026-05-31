@@ -6,7 +6,8 @@
 //    (via `importer::isClangCxxRecord`), not only namespaces;
 //  * the interface/implementation matcher pairing the Swift method with the
 //    imported C++ method (`lookupRelatedFuncs` includes records); and
-//  * rejection of a C++ virtual method.
+//  * acceptance of a simple C++ virtual method (full virtual coverage is in
+//    cxx_implementation_virtual.swift).
 
 // RUN: %target-swift-frontend -typecheck -verify %s \
 // RUN:   -enable-experimental-feature CxxImplementation \
@@ -65,11 +66,12 @@ extension Vec {
   }
 }
 
-// A C++ virtual method cannot be implemented in Swift.
+// A C++ virtual method of a simple (standalone, non-covariant) class can be
+// implemented in Swift. (Shape-restriction and vtable emission are covered by
+// test/decl/ext/cxx_implementation_virtual.swift and the IRGen/executable tests.)
 extension Shape {
   @cxx @implementation
   func area() -> Int32 {
-    // expected-error@-1 {{'@cxx @implementation' cannot implement a C++ virtual method}}
     return 0
   }
 }

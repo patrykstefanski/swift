@@ -2620,6 +2620,37 @@ static void noteUseOfMetadataByCXXInterop(IRGenerator &IRGen,
 }
 
 /// Emit the definition for the given SIL constant.
+/// If \p f provides the body of a C++ virtual instance method via
+/// `@cxx @implementation` and that method is its class's key function, emit the
+/// class's vtable + RTTI here. The method body lives in Swift, so otherwise no
+/// C++ translation unit would emit them; clang's CodeGenModule shares our
+/// llvm::Module, so the globals land directly in this object. The Sema shape
+/// gate guarantees the class needs no `this`/return-adjusting thunks or VTT, so
+/// the slots point directly at the (Swift-provided) method symbols.
+static void emitCxxImplementationVTableIfNeeded(IRGenModule &IGM,
+                                                SILFunction *f) {
+  if (f->getLoweredFunctionType()->getRepresentation() !=
+      SILFunctionTypeRepresentation::CXXMethod)
+    return;
+  SILDeclRef declRef = f->getDeclRef();
+  if (!declRef.hasDecl())
+    return;
+  auto *vd = dyn_cast_or_null<ValueDecl>(declRef.getDecl());
+  if (!vd)
+    return;
+  Decl *interface = vd->getImplementedObjCDecl();
+  if (!interface)
+    return;
+  auto *method =
+      dyn_cast_or_null<clang::CXXMethodDecl>(interface->getClangDecl());
+  if (!method || !method->isVirtual())
+    return;
+  // Emit the vtable/RTTI/thunks clang would normally emit alongside this
+  // virtual method's body (the body is in Swift). The check for "is this the
+  // key function" lives in clang, where CodeGenModule is a complete type.
+  clang::CodeGen::emitExternalVirtualMethodTables(IGM.getClangCGM(), method);
+}
+
 void IRGenModule::emitSILFunction(SILFunction *f) {
   if (f->isExternalDeclaration())
     return;
@@ -2648,6 +2679,8 @@ void IRGenModule::emitSILFunction(SILFunction *f) {
   }
 
   IRGenSILFunction(*this, f, llvmF).emitSILFunction();
+
+  emitCxxImplementationVTableIfNeeded(*this, f);
 }
 
 void IRGenSILFunction::emitSILFunction() {

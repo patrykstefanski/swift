@@ -3196,22 +3196,72 @@ bool swift::diagnoseObjCUnsatisfiedOptReqConflicts(SourceFile &sf) {
   return anyDiagnosed;
 }
 
+/// Whether `RD`'s value-type layout cannot be represented by Swift's C++
+/// interop because it has an *indirect* virtual base -- a virtual base reached
+/// through a non-virtual base. IRGen's `getBasesAndOffsets` skips a class's
+/// *direct* virtual bases (so those are merely omitted from the imported value
+/// type), but `collectBases` recurses into non-virtual bases using each base's
+/// standalone layout; a non-virtual base that itself carries any virtual base
+/// then yields out-of-order field offsets and trips an assertion in
+/// GenStruct.cpp. `getNumVBases()` is transitive over a class's whole base
+/// hierarchy, so a single non-virtual base with `getNumVBases() > 0` is exactly
+/// this crashing shape (the classic virtual "diamond" is one instance).
+static bool cxxRecordHasIndirectVirtualBase(const clang::CXXRecordDecl *RD) {
+  if (!RD || RD->getNumVBases() == 0)
+    return false;
+  for (const clang::CXXBaseSpecifier &base : RD->bases()) {
+    if (base.isVirtual())
+      continue; // a *direct* virtual base does not crash (it is just omitted)
+    if (const auto *baseRD = base.getType()->getAsCXXRecordDecl())
+      if (baseRD->getNumVBases() > 0)
+        return true; // non-virtual base carries a virtual base -> indirect vbase
+  }
+  return false;
+}
+
 void TypeChecker::checkObjCImplementation(Decl *D) {
   auto interfaceDecl = D->getImplementedObjCDecl();
   if (!interfaceDecl)
     return;
 
-  // A `@cxx @implementation` function cannot implement a C++ *virtual* method:
-  // virtual dispatch goes through the class vtable (emitted by C++ via its
-  // key-function rule), so a Swift-provided body would not be reliably reached
-  // and the vtable might never be emitted. Reject it explicitly rather than
-  // silently emit an unreachable symbol. (See docs/CxxImplementationDesign.md.)
+  // Extra checks for a `@cxx @implementation` function implementing a matched
+  // C++ method.
   if (D->getAttrs().hasAttribute<CxxDeclAttr>()) {
     if (auto *method = dyn_cast_or_null<clang::CXXMethodDecl>(
             interfaceDecl->getClangDecl())) {
-      if (method->isVirtual()) {
-        D->diagnose(diag::cxx_implementation_virtual_method);
+      // Reject a receiver C++ class whose value-type layout Swift cannot
+      // represent: one with an *indirect* virtual base (a virtual base reached
+      // through a non-virtual base). Lowering the method requires lowering the
+      // receiver record, and Swift's ClangRecordLowering trips an assertion for
+      // that shape (the classic virtual "diamond" is one instance). This is a
+      // pre-existing C++-interop value-type-import limitation, independent of
+      // @cxx; gate the @cxx path so it produces a clean error rather than an
+      // IRGen crash. (See docs/CxxImplementationDesign.md.)
+      if (method->isInstance() &&
+          cxxRecordHasIndirectVirtualBase(method->getParent())) {
+        D->diagnose(diag::cxx_implementation_indirect_virtual_base);
         return;
+      }
+
+      if (method->isVirtual()) {
+        // A C++ virtual method can be implemented in Swift: the body lowers like
+        // a non-virtual instance method, and IRGen emits the class's vtable (when
+        // this is the key function) plus this/return-adjusting thunks and a VTT
+        // via clang (emitExternalVirtualMethodTables), so multiple and virtual
+        // inheritance work. The one shape still unsupported is a *covariant*
+        // return: it returns a pointer/reference to a C++ class, which is not
+        // representable under @cxx. Reject it with a clear message (otherwise the
+        // generic representability check fires with confusing wording).
+        for (const clang::CXXMethodDecl *overridden :
+             method->overridden_methods()) {
+          if (overridden->getReturnType().getCanonicalType() !=
+              method->getReturnType().getCanonicalType()) {
+            D->diagnose(diag::cxx_implementation_virtual_unsupported_shape,
+                        "a covariant return type");
+            return;
+          }
+        }
+        // In scope: fall through to the instance-method checks below.
       }
 
       // A C++ instance method's `this` is always a pointer, so `self` must be

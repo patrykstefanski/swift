@@ -2179,8 +2179,18 @@ ERROR(cxx_incompatible_with_cdecl,none,
 // symbol, but virtual calls dispatch through the class vtable (which C++ emits
 // via its key-function rule). A Swift-provided body would therefore not be
 // reliably reached, and the vtable might never be emitted. Out of scope; reject.
-ERROR(cxx_implementation_virtual_method,none,
-      "'@cxx @implementation' cannot implement a C++ virtual method",
+// A C++ virtual method can be implemented in Swift, but the first implementation
+// only supports class shapes whose vtable needs no `this`/return-adjusting thunks
+// or VTT: no virtual bases, at most one (non-virtual) base, and a non-covariant
+// return. Other shapes are deferred (and would otherwise miscompile/fail to link).
+ERROR(cxx_implementation_virtual_unsupported_shape,none,
+      "'@cxx @implementation' does not yet support implementing a C++ virtual "
+      "method of a class with %0",
+      (StringRef))
+ERROR(cxx_implementation_indirect_virtual_base,none,
+      "'@cxx @implementation' does not support a C++ method of a class with an "
+      "indirect virtual base (a virtual base inherited through another base); "
+      "Swift cannot represent the layout of such a class",
       ())
 // A `mutating` Swift method would mutate the receiver, but the C++ method it
 // implements is declared `const` (its `this` is a pointer-to-const, and it is
