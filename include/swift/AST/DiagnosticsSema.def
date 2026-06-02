@@ -2192,6 +2192,10 @@ ERROR(cxx_implementation_indirect_virtual_base,none,
       "indirect virtual base (a virtual base inherited through another base); "
       "Swift cannot represent the layout of such a class",
       ())
+ERROR(cxx_implementation_foreign_reference_method,none,
+      "'@cxx @implementation' does not support implementing a C++ instance "
+      "method of a foreign-reference type (a 'SWIFT_SHARED_REFERENCE' class)",
+      ())
 // A `mutating` Swift method would mutate the receiver, but the C++ method it
 // implements is declared `const` (its `this` is a pointer-to-const, and it is
 // emitted under the `const` mangling). Allowing this would silently emit a

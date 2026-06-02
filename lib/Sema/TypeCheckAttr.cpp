@@ -1774,6 +1774,25 @@ static SourceRange getArgListRange(ASTContext &Ctx, DeclAttribute *attr) {
   return SourceRange();
 }
 
+/// Whether `D` is a `@cxx @implementation` *instance* method of an imported C++
+/// foreign-reference type (a `SWIFT_SHARED_REFERENCE` class). Such a method is
+/// not yet supported: the imported `self` is a class reference passed directly,
+/// but the C++-method entry-point lowering expects an indirect `this`, so a
+/// non-virtual one would crash IRGen; a virtual one also fails to match (the
+/// importer surfaces a `__synthesizedVirtualCall_` thunk under the method name).
+/// Both the `@cxx` attribute check and the `@implementation` matcher consult
+/// this so the user gets one clean diagnostic instead of a crash or a confusing
+/// "could not find imported function".
+static bool isCxxForeignReferenceInstanceMethod(const Decl *D) {
+  if (!D->getAttrs().hasAttribute<CxxDeclAttr>())
+    return false;
+  auto *FD = dyn_cast<FuncDecl>(D);
+  if (!FD || FD->isStatic())
+    return false;
+  auto *classDecl = D->getDeclContext()->getSelfClassDecl();
+  return classDecl && classDecl->isForeignReferenceType();
+}
+
 void AttributeChecker::
 visitObjCImplementationAttr(ObjCImplementationAttr *attr) {
   // If `D` is ABI-only, let ABIDeclChecker diagnose the bad attribute.
@@ -1913,7 +1932,8 @@ visitObjCImplementationAttr(ObjCImplementationAttr *attr) {
 
     // FIXME: if (AFD->getCDeclName().empty())
 
-    if (!AFD->getImplementedObjCDecl()) {
+    if (!AFD->getImplementedObjCDecl() &&
+        !isCxxForeignReferenceInstanceMethod(AFD)) {
       diagnose(attr->getLocation(),
                diag::attr_objc_implementation_func_not_found,
                AFD->getCDeclName(), AFD);
@@ -2468,6 +2488,14 @@ void AttributeChecker::visitCxxDeclAttr(CxxDeclAttr *attr) {
   if (dc->isTypeContext() && !importer::isClangNamespace(dc) &&
       !importer::isClangCxxRecord(dc))
     diagnose(attr->getLocation(), diag::cdecl_not_at_top_level, attr);
+
+  // An instance method of a foreign-reference type is not yet supported (see
+  // isCxxForeignReferenceInstanceMethod). Reject it here so both the virtual
+  // and non-virtual cases get one clean diagnostic; the matcher's generic
+  // "could not find imported function" is suppressed for the same predicate.
+  if (isCxxForeignReferenceInstanceMethod(D))
+    diagnose(attr->getLocation(),
+             diag::cxx_implementation_foreign_reference_method);
 
   // @cxx fundamentally relies on C++ interop (clang's C++ mangler, imported
   // C++ types, etc.). That is enabled via `-cxx-interoperability-mode=` /
