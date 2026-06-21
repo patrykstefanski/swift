@@ -10,6 +10,10 @@ int cxxFuncWithPointer(int *ptr);
 // Target for a `@cxx(name:)` whose Swift function is named differently.
 int renamedTarget(int param);
 
+// Same-arity overloads, disambiguated by the Swift signature's parameter type.
+int sameArity(int x);
+double sameArity(double x);
+
 int overloadedByArity(int x);
 int overloadedByArity(int x, int y);
 

@@ -71,6 +71,16 @@ public func acceptStruct(_ s: SimpleStruct) -> Int32 { return s.x }
 @cxx(name: "renamedTarget") @implementation
 public func swiftRenamedFunc(_ param: Int32) -> Int32 { return param }
 
+// Same-arity overloads disambiguated by Swift parameter type; each body is
+// emitted under the matched overload's Itanium symbol.
+// CHECK-LABEL: define{{.*}} i32 @_Z9sameArityi
+@cxx @implementation
+public func sameArity(_ x: Int32) -> Int32 { return x }
+
+// CHECK-LABEL: define{{.*}} double @_Z9sameArityd
+@cxx @implementation
+public func sameArity(_ x: Double) -> Double { return x }
+
 
 // CHECK-LABEL: define{{.*}} swiftcc void @"$s4main12callCxxFuncsyyF"
 // CHECK:   invoke i32 @_Z11cxxFreeFunci
