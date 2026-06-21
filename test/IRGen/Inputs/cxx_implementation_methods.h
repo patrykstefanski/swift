@@ -18,4 +18,8 @@ struct Vec {
 
   // Struct-returning const instance method: exercises sret + `this` ordering.
   Pair spread(int k) const;
+
+  // const/non-const overload pair (same parameters): distinguished by `mutating`.
+  int probe(int k) const;   // -> _ZNK3Vec5probeEi
+  int probe(int k);         // -> _ZN3Vec5probeEi
 };

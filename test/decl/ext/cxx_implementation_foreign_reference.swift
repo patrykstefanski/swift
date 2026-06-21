@@ -28,6 +28,13 @@ extension Widget {
   // would otherwise crash IRGen).
   @cxx @implementation // expected-error {{'@cxx @implementation' does not support implementing a C++ instance method of a foreign-reference type}}
   func tag() -> Int32 { return id }
+
+  // A const/non-const overload on a foreign-reference type: still rejected with
+  // the foreign-reference diagnostic (not the ambiguous-overload one). `mutating`
+  // can't disambiguate const/non-const on a class, so the value-type tiebreaker
+  // does not apply here.
+  @cxx(name: "count") @implementation // expected-error {{'@cxx @implementation' does not support implementing a C++ instance method of a foreign-reference type}}
+  func countConst(_: Int32) -> Int32 { return id }
 }
 
 // Contrast: an instance method of a value-type C++ record still works.

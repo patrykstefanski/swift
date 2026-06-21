@@ -6872,6 +6872,30 @@ findFunctionInterfaceAndImplementation(AbstractFunctionDecl *func) {
       if (sameCxxParameterTypes(cast<ValueDecl>(cand), func))
         matched.push_back(cand);
 
+    // A value-type record's const and non-const overloads share parameter types
+    // and are distinguished by `mutating`: interop maps a const method to a
+    // non-mutating Swift method and a non-const method to a `mutating` one, so
+    // use the impl's mutating-ness to pick. This applies only to value-type
+    // records (imported as structs); FRT/class methods cannot be `mutating`, so
+    // their const/non-const overloads stay ambiguous and are rejected.
+    if (matched.size() > 1) {
+      auto *selfNominal = func->getDeclContext()->getSelfNominalTypeDecl();
+      if (isa_and_nonnull<StructDecl>(selfNominal)) {
+        bool implMutating = false;
+        if (auto *fd = dyn_cast<FuncDecl>(func))
+          implMutating = fd->isMutating();
+        TinyPtrVector<Decl *> byConstness;
+        for (Decl *cand : matched)
+          if (auto *m = dyn_cast_or_null<clang::CXXMethodDecl>(
+                  cast<ValueDecl>(cand)->getClangDecl()))
+            // const <-> non-mutating, non-const <-> mutating.
+            if (m->isConst() != implMutating)
+              byConstness.push_back(cand);
+        if (byConstness.size() == 1)
+          matched = byConstness;
+      }
+    }
+
     if (matched.size() == 1) {
       interface = matched.front();
     } else if (matched.empty()) {

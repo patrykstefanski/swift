@@ -13,6 +13,8 @@ struct Widget {
   Widget(int i) : id(i) {}
   virtual int describe() const;   // virtual instance method
   int tag() const;                // non-virtual instance method
+  int count(int n) const;         // const/non-const overload pair (same params)
+  int count(int n);
 } SWIFT_SHARED_REFERENCE(retainWidget, releaseWidget);
 
 // Plain value-type C++ record (imports as a struct) -- the contrast case.

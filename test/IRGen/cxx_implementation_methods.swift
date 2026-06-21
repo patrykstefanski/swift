@@ -30,6 +30,15 @@ extension Vec {
   public func spread(_ k: Int32) -> Pair {
     return Pair(a: Int(x), b: Int(k), c: Int(x) + Int(k))
   }
+
+  // const/non-const overloads disambiguated by `mutating` (renamed via
+  // `@cxx(name:)` so the two Swift impls don't collide): non-mutating binds the
+  // const overload, mutating binds the non-const overload.
+  @cxx(name: "probe") @implementation
+  public func probeConst(_ k: Int32) -> Int32 { return x + k }
+
+  @cxx(name: "probe") @implementation
+  public mutating func probeMutating(_ k: Int32) -> Int32 { x = x + k; return x }
 }
 
 /// Static method: emitted under the Itanium symbol.
@@ -44,3 +53,8 @@ extension Vec {
 /// Struct-returning const instance method: indirect result (sret) first, then
 /// `this` (ptr), then `k` (i32).
 // CHECK-LABEL: define{{.*}} void @_ZNK3Vec6spreadEi(ptr {{[^,]*}}sret{{[^,]+}}, ptr {{[^,]+}}, i32
+
+/// const/non-const overloads: the non-mutating impl emits the const symbol, the
+/// mutating impl the non-const symbol.
+// CHECK-LABEL: define{{.*}} i32 @_ZNK3Vec5probeEi(ptr
+// CHECK-LABEL: define{{.*}} i32 @_ZN3Vec5probeEi(ptr

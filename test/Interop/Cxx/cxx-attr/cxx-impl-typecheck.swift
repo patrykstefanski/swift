@@ -52,6 +52,18 @@ func ambiguousOverload(_: Int32) -> Int32 {
   return 0
 }
 
+// A value-type record's const and non-const overloads share parameter types but
+// are disambiguated by `mutating` (with @cxx(name:) so the two Swift impls don't
+// collide): a non-mutating impl binds the const overload, a mutating impl the
+// non-const overload.
+extension Counter {
+  @cxx(name: "adjust") @implementation
+  func adjustConst(_: Int32) -> Int32 { return 0 }          // -> int adjust(int) const
+
+  @cxx(name: "adjust") @implementation
+  mutating func adjustMutating(_: Int32) -> Int32 { return 0 }  // -> int adjust(int)
+}
+
 // `@cxx(name:)` lets the Swift function be named differently from the C++
 // function it implements; the importer looks up the supplied C++ name. Matches
 // `int CxxImplFuncNameMismatch1(int)`.

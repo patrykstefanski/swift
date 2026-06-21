@@ -1937,10 +1937,12 @@ visitObjCImplementationAttr(ObjCImplementationAttr *attr) {
         diagnose(attr->getLocation(),
                  diag::attr_objc_implementation_func_not_found,
                  AFD->getCDeclName(), AFD);
-    } else if (AFD->getAllImplementedObjCDecls().size() > 1) {
+    } else if (AFD->getAllImplementedObjCDecls().size() > 1 &&
+               !isCxxForeignReferenceInstanceMethod(AFD)) {
       // The C++ name resolved to several overloads whose parameters all match
       // this Swift signature (e.g. a by-value/const-reference pair); we can't
-      // pick one.
+      // pick one. (An FRT instance method is rejected separately by
+      // visitCxxDeclAttr, so don't also report ambiguity there.)
       diagnose(attr->getLocation(),
                diag::attr_cxx_implementation_ambiguous_overload, AFD);
     }
