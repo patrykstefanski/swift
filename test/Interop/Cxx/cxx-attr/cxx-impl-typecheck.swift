@@ -35,12 +35,13 @@ func CxxImplFuncMismatch2(_: Int32) -> Float {
   return 0
 }
 
-// Same-arity overloads: lookup finds both imported decls, matching fails
+// Same-arity C++ overloads are disambiguated by the Swift signature's parameter
+// types: each implementation binds to the overload whose parameters match.
 @cxx @implementation
-func sameArityOverload(_: Int32) -> Int32 {
-  // expected-error@-2 {{could not find imported function 'sameArityOverload' matching global function 'sameArityOverload'; make sure you import the module or header that declares it}}
-  return 0
-}
+func sameArityOverload(_: Int32) -> Int32 { return 0 }    // -> int sameArityOverload(int)
+
+@cxx @implementation
+func sameArityOverload(_: Double) -> Double { return 0 }  // -> double sameArityOverload(double)
 
 // `@cxx(name:)` lets the Swift function be named differently from the C++
 // function it implements; the importer looks up the supplied C++ name. Matches

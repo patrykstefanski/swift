@@ -6782,6 +6782,31 @@ static void lookupRelatedFuncs(AbstractFunctionDecl *func,
   }
 }
 
+/// Compare two function/method decls by their parameter-type lists, using
+/// canonical type equality and stripping `self` for methods. Used to pick the
+/// C++ overload a `@cxx @implementation` Swift function implements.
+static bool sameCxxParameterTypes(ValueDecl *a, ValueDecl *b) {
+  auto memberType = [](ValueDecl *d) -> Type {
+    if (auto fn = dyn_cast<AbstractFunctionDecl>(d))
+      if (fn->hasImplicitSelfDecl())
+        return fn->getMethodInterfaceType();
+    return d->getInterfaceType();
+  };
+  auto *fa = memberType(a)->getAs<AnyFunctionType>();
+  auto *fb = memberType(b)->getAs<AnyFunctionType>();
+  if (!fa || !fb)
+    return false;
+  auto pa = fa->getParams();
+  auto pb = fb->getParams();
+  if (pa.size() != pb.size())
+    return false;
+  for (auto i : indices(pa))
+    if (pa[i].getOldType()->getCanonicalType() !=
+        pb[i].getOldType()->getCanonicalType())
+      return false;
+  return true;
+}
+
 static ObjCInterfaceAndImplementation
 findFunctionInterfaceAndImplementation(AbstractFunctionDecl *func) {
   if (!func)
@@ -6803,9 +6828,9 @@ findFunctionInterfaceAndImplementation(AbstractFunctionDecl *func) {
   SmallVector<ValueDecl *, 4> results;
   lookupRelatedFuncs(func, results);
 
-  // Classify the `results` as either the interface or an implementation.
-  // (Multiple implementations are invalid but utterable.)
-  Decl *interface = nullptr;
+  // Classify the `results`: imported C/C++ declarations are interface
+  // candidates; `@c`/`@cxx @implementation` decls are implementations.
+  TinyPtrVector<Decl *> clangCandidates;
   TinyPtrVector<Decl *> impls;
 
   for (ValueDecl *result : results) {
@@ -6823,16 +6848,49 @@ findFunctionInterfaceAndImplementation(AbstractFunctionDecl *func) {
     if (resultFunc->getCDeclName() != clangName)
       continue;
 
-    if (resultFunc->hasClangNode()) {
-      if (interface) {
-        // This clang name is overloaded. That should only happen with C++
-        // functions/methods, which aren't currently supported.
-        return {};
-      }
-      interface = result;
-    } else if (resultFunc->isObjCImplementation()) {
+    if (resultFunc->hasClangNode())
+      clangCandidates.push_back(result);
+    else if (resultFunc->isObjCImplementation())
       impls.push_back(result);
+  }
+
+  // Pick the interface. A single candidate is the common case and the only case
+  // for C (which has no overloading) -- behavior is unchanged. Multiple
+  // same-named C++ candidates form an overload set; disambiguate by parameter
+  // type against the Swift implementation `func`.
+  Decl *interface = nullptr;
+  if (clangCandidates.size() == 1) {
+    interface = clangCandidates.front();
+  } else if (clangCandidates.size() > 1) {
+    // For the reverse direction (`func` is itself an imported overload) we
+    // can't know which implementation maps to which overload, so bail as before.
+    if (func->hasClangNode())
+      return {};
+
+    TinyPtrVector<Decl *> matched;
+    for (Decl *cand : clangCandidates)
+      if (sameCxxParameterTypes(cast<ValueDecl>(cand), func))
+        matched.push_back(cand);
+
+    if (matched.size() == 1) {
+      interface = matched.front();
+    } else if (matched.empty()) {
+      return {};  // no overload's parameters match -> "could not find".
+    } else {
+      // Several overloads share this Swift signature (e.g. a const/non-const
+      // pair). Surface them all; the attribute checker reports the ambiguity.
+      return ObjCInterfaceAndImplementation(matched, func);
     }
+
+    // Restrict the implementations to those implementing the *same* overload,
+    // so implementing a different overload of the same name isn't flagged as a
+    // duplicate implementation by `constructResult`.
+    TinyPtrVector<Decl *> sameOverloadImpls;
+    for (Decl *impl : impls)
+      if (sameCxxParameterTypes(cast<ValueDecl>(impl),
+                                cast<ValueDecl>(interface)))
+        sameOverloadImpls.push_back(impl);
+    impls = sameOverloadImpls;
   }
 
   // If we found enough decls to construct a result, `func` should be among them
