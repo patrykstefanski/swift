@@ -1932,11 +1932,17 @@ visitObjCImplementationAttr(ObjCImplementationAttr *attr) {
 
     // FIXME: if (AFD->getCDeclName().empty())
 
-    if (!AFD->getImplementedObjCDecl() &&
-        !isCxxForeignReferenceInstanceMethod(AFD)) {
+    if (!AFD->getImplementedObjCDecl()) {
+      if (!isCxxForeignReferenceInstanceMethod(AFD))
+        diagnose(attr->getLocation(),
+                 diag::attr_objc_implementation_func_not_found,
+                 AFD->getCDeclName(), AFD);
+    } else if (AFD->getAllImplementedObjCDecls().size() > 1) {
+      // The C++ name resolved to several overloads whose parameters all match
+      // this Swift signature (e.g. a by-value/const-reference pair); we can't
+      // pick one.
       diagnose(attr->getLocation(),
-               diag::attr_objc_implementation_func_not_found,
-               AFD->getCDeclName(), AFD);
+               diag::attr_cxx_implementation_ambiguous_overload, AFD);
     }
   }
 }

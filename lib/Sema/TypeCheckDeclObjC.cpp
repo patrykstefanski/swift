@@ -3224,6 +3224,11 @@ void TypeChecker::checkObjCImplementation(Decl *D) {
   if (!interfaceDecl)
     return;
 
+  // An ambiguous C++ overload set surfaces as multiple interface decls; the
+  // attribute checker diagnoses it. Don't also match against an arbitrary one.
+  if (D->getAllImplementedObjCDecls().size() > 1)
+    return;
+
   // Extra checks for a `@cxx @implementation` function implementing a matched
   // C++ method.
   if (D->getAttrs().hasAttribute<CxxDeclAttr>()) {

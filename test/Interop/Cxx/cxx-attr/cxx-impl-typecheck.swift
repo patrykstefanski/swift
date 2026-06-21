@@ -43,6 +43,15 @@ func sameArityOverload(_: Int32) -> Int32 { return 0 }    // -> int sameArityOve
 @cxx @implementation
 func sameArityOverload(_: Double) -> Double { return 0 }  // -> double sameArityOverload(double)
 
+// `int ambiguousOverload(int)` and `int ambiguousOverload(const int &)` both
+// import as (Int32) -> Int32, so the Swift signature alone cannot pick one ->
+// ambiguous; the diagnostic points at the bare-@cxx mangled-symbol escape hatch.
+@cxx @implementation
+func ambiguousOverload(_: Int32) -> Int32 {
+  // expected-error@-2 {{global function 'ambiguousOverload' matches multiple imported C++ overloads; to implement a specific overload, name the Swift function its mangled symbol with a bare '@cxx' (for example '@cxx func _Z3fooi')}}
+  return 0
+}
+
 // `@cxx(name:)` lets the Swift function be named differently from the C++
 // function it implements; the importer looks up the supplied C++ name. Matches
 // `int CxxImplFuncNameMismatch1(int)`.

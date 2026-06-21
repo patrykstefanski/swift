@@ -1945,6 +1945,11 @@ ERROR(attr_objc_implementation_func_not_found,none,
       "could not find imported function '%0' matching %kind1; make sure you "
       "import the module or header that declares it",
       (StringRef, ValueDecl*))
+ERROR(attr_cxx_implementation_ambiguous_overload,none,
+      "%kind0 matches multiple imported C++ overloads; to implement a specific "
+      "overload, name the Swift function its mangled symbol with a bare '@cxx' "
+      "(for example '@cxx func _Z3fooi')",
+      (ValueDecl*))
 NOTE(attr_objc_implementation_fixit_remove_category_name,none,
      "remove arguments to implement the main '@interface' for this class",
      ())
