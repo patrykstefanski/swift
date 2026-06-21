@@ -6,17 +6,29 @@
 // RUN:    -enable-experimental-cxx-interop \
 // RUN:    -disable-objc-interop
 
-// `@cxx` takes no argument: the emitted C++ symbol is derived from the function
-// itself (its base identifier for a bare `@cxx`, or the matched C++
-// declaration's mangled name for a `@cxx @implementation`). Unlike `@c`, there
-// is no explicit-name form.
+// `@cxx` optionally takes a `name:` argument giving the unqualified C++
+// function name to match against (a source name, not a mangled symbol). A bare
+// `@cxx` matches/emits under the function's own base identifier.
 @cxx func foo(x: Int32) -> Int32 { return x }
 
 @cxx func defaultName() {}
 
-// The parenthesized name form `@cxx(name)` is not valid syntax.
-@cxx(name) func hasArgument() {}
-// expected-error @-1 {{expected declaration}}
+// Explicit C++ function name to match. The Swift function may be named
+// differently from the C++ function it implements.
+@cxx(name: "cxx_foo") func renamed(x: Int32) -> Int32 { return x }
+
+// Malformed `name:` arguments are rejected.
+@cxx(name) func missingValue() {}
+// expected-error @-1 {{expected ':' after label 'name'}}
+
+@cxx("cxx_foo") func missingLabel() {}
+// expected-error @-1 {{expected 'name:' in 'cxx' attribute}}
+
+@cxx(name: bar) func nonStringValue() {}
+// expected-error @-1 {{expected string literal in 'cxx' attribute}}
+
+@cxx() func emptyParens() {}
+// expected-error @-1 {{expected 'name:' in 'cxx' attribute}}
 
 // @cxx and @c/@_cdecl pick different foreign languages for the same decl and
 // would be resolved inconsistently across compiler phases, so the combination

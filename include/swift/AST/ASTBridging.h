@@ -931,10 +931,11 @@ BridgedCDeclAttr BridgedCDeclAttr_createParsed(BridgedASTContext cContext,
                                                BridgedStringRef cName,
                                                bool underscored);
 
-SWIFT_NAME("BridgedCxxDeclAttr.createParsed(_:atLoc:range:)")
+SWIFT_NAME("BridgedCxxDeclAttr.createParsed(_:atLoc:range:name:)")
 BridgedCxxDeclAttr BridgedCxxDeclAttr_createParsed(BridgedASTContext cContext,
                                                    swift::SourceLoc atLoc,
-                                                   swift::SourceRange range);
+                                                   swift::SourceRange range,
+                                                   BridgedStringRef cName);
 
 SWIFT_NAME("BridgedCustomAttr.createParsed(atLoc:type:declContext:initContext:"
            "argumentList:)")

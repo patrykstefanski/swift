@@ -3611,12 +3611,15 @@ private:
       auto ident = VD->getASTContext().getIdentifier(cdeclAttr->Name);
       return ObjCSelector(VD->getASTContext(), 0, { ident });
     }
-#if 0
     if (auto cxxAttr = VD->getAttrs().getAttribute<CxxDeclAttr>()) {
-      auto ident = VD->getASTContext().getIdentifier(cxxAttr->Name);
-      return ObjCSelector(VD->getASTContext(), 0, { ident });
+      // An explicit `@cxx(name:)` names the C++ function to match; treat it as
+      // the explicit "selector". A bare `@cxx` (empty name) falls through to
+      // ordinary by-name matching.
+      if (!cxxAttr->Name.empty()) {
+        auto ident = VD->getASTContext().getIdentifier(cxxAttr->Name);
+        return ObjCSelector(VD->getASTContext(), 0, { ident });
+      }
     }
-#endif
     if (auto objcAttr = VD->getAttrs().getAttribute<ObjCAttr>())
       if (!objcAttr->isNameImplicit())
         return objcAttr->getName().value_or(ObjCSelector());
@@ -3965,8 +3968,17 @@ private:
     if (explicitObjCName && getObjCName(req) != explicitObjCName)
       return MatchOutcome::WrongExplicitObjCName;
 
-    if (!hasSwiftNameMatch)
-      return MatchOutcome::WrongSwiftName;
+    if (!hasSwiftNameMatch) {
+      // A `@cxx(name:)` implementation may be named differently from the C++
+      // function it implements. The explicit C++ name -- already verified to
+      // match the requirement just above -- is the authoritative match key, so
+      // a Swift-name difference is expected and fine. (Scoped to `@cxx`;
+      // `@c`/`@objc` keep requiring matching Swift names.)
+      bool cxxExplicitNameMatch =
+          explicitObjCName && cand->getAttrs().hasAttribute<CxxDeclAttr>();
+      if (!cxxExplicitNameMatch)
+        return MatchOutcome::WrongSwiftName;
+    }
 
     if (!hasObjCNameMatch)
       return MatchOutcome::WrongImplicitObjCName;

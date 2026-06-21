@@ -210,9 +210,10 @@ BridgedCDeclAttr BridgedCDeclAttr_createParsed(BridgedASTContext cContext,
 
 BridgedCxxDeclAttr BridgedCxxDeclAttr_createParsed(BridgedASTContext cContext,
                                                    SourceLoc atLoc,
-                                                   SourceRange range) {
+                                                   SourceRange range,
+                                                   BridgedStringRef cName) {
   return new (cContext.unbridged())
-      CxxDeclAttr(atLoc, range, /*Implicit=*/false);
+      CxxDeclAttr(cName.unbridged(), atLoc, range, /*Implicit=*/false);
 }
 
 BridgedCustomAttr BridgedCustomAttr_createParsed(

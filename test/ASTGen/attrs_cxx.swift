@@ -18,3 +18,6 @@
 
 @cxx
 func foo() {}
+
+@cxx(name: "cxx_bar")
+func bar() {}

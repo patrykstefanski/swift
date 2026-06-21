@@ -7,6 +7,9 @@ int anotherCxxFunc(int x, int y);
 void voidCxxFunc();
 int cxxFuncWithPointer(int *ptr);
 
+// Target for a `@cxx(name:)` whose Swift function is named differently.
+int renamedTarget(int param);
+
 int overloadedByArity(int x);
 int overloadedByArity(int x, int y);
 

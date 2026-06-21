@@ -6113,7 +6113,7 @@ llvm::Error DeclDeserializer::deserializeDeclCommon() {
         bool isImplicit;
         serialization::decls_block::CxxDeclDeclAttrLayout::readRecord(
             scratch, isImplicit);
-        Attr = new (ctx) CxxDeclAttr(isImplicit);
+        Attr = new (ctx) CxxDeclAttr(blobData, isImplicit);
         break;
       }
 

@@ -599,10 +599,23 @@ extension ASTGenVisitor {
   }
 
   func generateCxxDeclAttr(attribute node: AttributeSyntax) -> BridgedCxxDeclAttr? {
+    // The optional `name: "..."` argument is the unqualified C++ function name
+    // the importer matches against (a source name, not a mangled symbol).
+    var name: BridgedStringRef = ""
+    if node.arguments != nil {
+      guard let parsed = self.generateWithLabeledExprListArguments(attribute: node, { args in
+        self.generateConsumingSimpleStringLiteralAttrOption(args: &args, label: "name")
+      }) else {
+        return nil
+      }
+      name = parsed
+    }
+
     return .createParsed(
       self.ctx,
       atLoc: self.generateSourceLoc(node.atSign),
-      range: self.generateAttrSourceRange(node)
+      range: self.generateAttrSourceRange(node),
+      name: name
     )
   }
 

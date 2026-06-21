@@ -4926,8 +4926,8 @@ StringRef ValueDecl::getCDeclName() const {
   };
   if (auto cdeclAttr = getAttrs().getAttribute<CDeclAttr>())
     return nameOrBaseIdentifier(cdeclAttr->Name);
-  if (getAttrs().hasAttribute<CxxDeclAttr>())
-    return getBaseIdentifier().str();
+  if (auto cxxAttr = getAttrs().getAttribute<CxxDeclAttr>())
+    return nameOrBaseIdentifier(cxxAttr->Name);
 
   return "";
 }

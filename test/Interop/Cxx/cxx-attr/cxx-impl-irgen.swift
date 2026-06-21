@@ -63,6 +63,14 @@ public func returnStruct(_ x: Int32, _ y: Int32) -> SimpleStruct {
 @cxx @implementation
 public func acceptStruct(_ s: SimpleStruct) -> Int32 { return s.x }
 
+// `@cxx(name:)` matches `int renamedTarget(int)` by that C++ name even though
+// the Swift function is named differently; the body is still emitted under the
+// matched declaration's Itanium-mangled symbol, proving `name:` drives matching
+// rather than verbatim symbol emission.
+// CHECK-LABEL: define{{.*}} i32 @_Z13renamedTargeti
+@cxx(name: "renamedTarget") @implementation
+public func swiftRenamedFunc(_ param: Int32) -> Int32 { return param }
+
 
 // CHECK-LABEL: define{{.*}} swiftcc void @"$s4main12callCxxFuncsyyF"
 // CHECK:   invoke i32 @_Z11cxxFreeFunci
