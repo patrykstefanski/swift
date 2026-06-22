@@ -2505,6 +2505,29 @@ void AttributeChecker::visitCxxDeclAttr(CxxDeclAttr *attr) {
     diagnose(attr->getLocation(),
              diag::cxx_implementation_foreign_reference_method);
 
+  // A `@cxx @implementation` function that *returns* a foreign-reference type is
+  // only supported for a `+1` (`SWIFT_RETURNS_RETAINED`) result: the Swift body
+  // produces an owned (+1) value, which matches an owned result but would
+  // over-retain (leak) against a `+0` (`SWIFT_RETURNS_UNRETAINED`, or
+  // unannotated) result. Diagnose the unsupported `+0` case rather than emitting
+  // a leak. (Free functions are lowered natively and always produce +1, so they
+  // are only correct for `returns_retained`; this check enforces that.)
+  if (auto *FD = dyn_cast<FuncDecl>(D)) {
+    if (auto *interface = FD->getImplementedObjCDecl()) {
+      if (auto *clangFn =
+              dyn_cast_or_null<clang::NamedDecl>(interface->getClangDecl())) {
+        auto *resultClass = FD->getResultInterfaceType()
+                                ->lookThroughAllOptionalTypes()
+                                ->getClassOrBoundGenericClass();
+        if (resultClass && resultClass->isForeignReferenceType() &&
+            importer::getOwnershipOfReturnedFRT(clangFn) !=
+                ResultConvention::Owned)
+          diagnose(attr->getLocation(),
+                   diag::cxx_implementation_frt_result_not_retained);
+      }
+    }
+  }
+
   // @cxx fundamentally relies on C++ interop (clang's C++ mangler, imported
   // C++ types, etc.). That is enabled via `-cxx-interoperability-mode=` /
   // `-enable-experimental-cxx-interop`, NOT via a plain experimental-feature

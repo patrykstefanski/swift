@@ -3306,8 +3306,15 @@ getForeignRepresentable(Type type, ForeignLanguage language,
     switch (language) {
     case ForeignLanguage::C:
     case ForeignLanguage::Cxx:
-      // Imported classes and protocols are not representable in C or C++.
-      if (isa<ClassDecl>(nominal) || isa<ProtocolDecl>(nominal))
+      // Imported classes and protocols are not representable in C or C++,
+      // except a C++ foreign-reference type, whose value is a pointer.
+      if (auto *classDecl = dyn_cast<ClassDecl>(nominal)) {
+        if (language == ForeignLanguage::Cxx &&
+            classDecl->isForeignReferenceType())
+          return { ForeignRepresentableKind::Trivial, nullptr };
+        return failure();
+      }
+      if (isa<ProtocolDecl>(nominal))
         return failure();
 
       // @objc enums are not representable in C or C++; @c ones and types

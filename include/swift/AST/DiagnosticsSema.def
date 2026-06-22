@@ -2201,6 +2201,17 @@ ERROR(cxx_implementation_foreign_reference_method,none,
       "'@cxx @implementation' does not support implementing a C++ instance "
       "method of a foreign-reference type (a 'SWIFT_SHARED_REFERENCE' class)",
       ())
+// A `@cxx @implementation` function that returns a foreign-reference type can
+// only be supported when the result is owned (+1): the Swift body produces a
+// retained value, which matches a `SWIFT_RETURNS_RETAINED` result but would
+// over-retain (leak) against an unretained (+0) result. Diagnose the
+// unsupported +0 case rather than emitting a leak.
+ERROR(cxx_implementation_frt_result_not_retained,none,
+      "'@cxx @implementation' for a function returning a foreign-reference type "
+      "requires a '+1' result; annotate the C++ declaration "
+      "'SWIFT_RETURNS_RETAINED' ('SWIFT_RETURNS_UNRETAINED' / unannotated "
+      "results are not yet supported)",
+      ())
 // A `mutating` Swift method would mutate the receiver, but the C++ method it
 // implements is declared `const` (its `this` is a pointer-to-const, and it is
 // emitted under the `const` mangling). Allowing this would silently emit a
