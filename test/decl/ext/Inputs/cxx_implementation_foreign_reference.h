@@ -14,6 +14,8 @@ struct Widget {
   virtual int describe() const;   // virtual instance method
   int tag() const;                // non-virtual const instance method
   void bump(int by);              // non-virtual non-const instance method
+  int g(int x) const;             // const/non-const overload pair (same params)
+  int g(int x);
 } SWIFT_SHARED_REFERENCE(retainWidget, releaseWidget);
 
 // Plain value-type C++ record (imports as a struct) -- the contrast case.

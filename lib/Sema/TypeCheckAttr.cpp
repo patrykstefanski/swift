@@ -58,6 +58,7 @@
 #include "swift/Parse/ParseDeclName.h"
 #include "swift/Sema/IDETypeChecking.h"
 #include "clang/Basic/CharInfo.h"
+#include "clang/AST/DeclCXX.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/Debug.h"
@@ -1793,6 +1794,45 @@ static bool isCxxForeignReferenceInstanceMethod(const Decl *D) {
   return classDecl && classDecl->isForeignReferenceType();
 }
 
+/// A C++ class can declare a const/non-const overload pair with the same
+/// parameter types (`int g(int) const;` and `int g(int);`). For a *value-type*
+/// record both overloads import and the matcher disambiguates them by the Swift
+/// impl's `mutating`-ness (const <-> non-mutating, non-const <-> mutating). A
+/// *foreign-reference type* imports as a Swift class, which cannot have a
+/// `mutating` method, so only one of the pair is imported and a single
+/// `@cxx @implementation` would silently bind it -- there is no way for the user
+/// to express which overload is meant. Detect that shape (the matched C++ method
+/// has a const/non-const sibling with identical parameters) so it can be
+/// diagnosed as ambiguous instead of silently implementing one overload.
+static bool cxxFRTMethodHasConstnessOverload(const clang::CXXMethodDecl *method) {
+  if (!method)
+    return false;
+  const clang::CXXRecordDecl *record = method->getParent();
+  if (!record)
+    return false;
+  for (const clang::CXXMethodDecl *sibling : record->methods()) {
+    if (sibling == method)
+      continue;
+    if (sibling->getDeclName() != method->getDeclName())
+      continue;
+    if (sibling->isConst() == method->isConst())
+      continue;
+    if (sibling->getNumParams() != method->getNumParams())
+      continue;
+    bool sameParams = true;
+    for (unsigned i = 0, n = method->getNumParams(); i < n; ++i) {
+      if (sibling->getParamDecl(i)->getType().getCanonicalType() !=
+          method->getParamDecl(i)->getType().getCanonicalType()) {
+        sameParams = false;
+        break;
+      }
+    }
+    if (sameParams)
+      return true;
+  }
+  return false;
+}
+
 void AttributeChecker::
 visitObjCImplementationAttr(ObjCImplementationAttr *attr) {
   // If `D` is ABI-only, let ABIDeclChecker diagnose the bad attribute.
@@ -1937,12 +1977,13 @@ visitObjCImplementationAttr(ObjCImplementationAttr *attr) {
         diagnose(attr->getLocation(),
                  diag::attr_objc_implementation_func_not_found,
                  AFD->getCDeclName(), AFD);
-    } else if (AFD->getAllImplementedObjCDecls().size() > 1 &&
-               !isCxxForeignReferenceInstanceMethod(AFD)) {
+    } else if (AFD->getAllImplementedObjCDecls().size() > 1) {
       // The C++ name resolved to several overloads whose parameters all match
-      // this Swift signature (e.g. a by-value/const-reference pair); we can't
-      // pick one. (An FRT instance method is rejected separately by
-      // visitCxxDeclAttr, so don't also report ambiguity there.)
+      // this Swift signature and which Swift can't tell apart -- e.g. a
+      // by-value/const-reference free-function pair that both import as the same
+      // Swift signature. (A const/non-const pair on a *foreign-reference type*
+      // imports only one overload, so it does not surface here; it is detected
+      // and diagnosed in visitCxxDeclAttr instead.)
       diagnose(attr->getLocation(),
                diag::attr_cxx_implementation_ambiguous_overload, AFD);
     }
@@ -2506,6 +2547,28 @@ void AttributeChecker::visitCxxDeclAttr(CxxDeclAttr *attr) {
   if (isCxxForeignReferenceInstanceMethod(D) && !D->getImplementedObjCDecl())
     diagnose(attr->getLocation(),
              diag::cxx_implementation_foreign_reference_method);
+
+  // An FRT (imported as a Swift class) cannot have a `mutating` method, so the
+  // `mutating` tiebreaker that disambiguates a value-type record's const/
+  // non-const overload pair is unavailable: only one of the pair imports and a
+  // single `@cxx @implementation` would silently bind it. Diagnose that as
+  // ambiguous so the user is not surprised by which overload was implemented.
+  // (The analogous value-type-record case is disambiguated in the matcher; a
+  // genuinely ambiguous free-function/value-type pair surfaces as
+  // `getAllImplementedObjCDecls().size() > 1` and is diagnosed in
+  // visitObjCImplementationAttr.)
+  if (isCxxForeignReferenceInstanceMethod(D)) {
+    if (auto *interface = D->getImplementedObjCDecl()) {
+      if (auto *m = dyn_cast_or_null<clang::CXXMethodDecl>(
+              interface->getClangDecl())) {
+        m = importer::getUnderlyingVirtualMethod(m);
+        if (cxxFRTMethodHasConstnessOverload(m))
+          diagnose(attr->getLocation(),
+                   diag::attr_cxx_implementation_ambiguous_overload,
+                   cast<ValueDecl>(D));
+      }
+    }
+  }
 
   // A `@cxx @implementation` function that *returns* a foreign-reference type is
   // only supported for a `+1` (`SWIFT_RETURNS_RETAINED`) result: the Swift body
