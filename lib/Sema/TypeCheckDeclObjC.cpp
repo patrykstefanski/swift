@@ -3279,14 +3279,23 @@ void TypeChecker::checkObjCImplementation(Decl *D) {
       //     self by value, which cannot form the C++ `this` ABI.
       // Reject the mismatches so we never emit an ill-formed receiver ABI.
       if (method->isInstance()) {
-        if (auto *FD = dyn_cast<FuncDecl>(D)) {
-          if (method->isConst() && FD->isMutating()) {
-            D->diagnose(diag::cxx_implementation_mutating_const_method);
-            return;
-          }
-          if (!method->isConst() && !FD->isMutating()) {
-            D->diagnose(diag::cxx_implementation_nonconst_needs_mutating);
-            return;
+        // The mutating/const correspondence only applies to a value-type record
+        // receiver, where self is passed by pointer and mutation needs
+        // `inout`/`mutating`. An FRT receiver is a *reference* (a class): Swift
+        // forbids `mutating` on it, and both const and non-const C++ methods map
+        // to non-mutating Swift methods (mutation goes through the reference).
+        auto *selfClass = D->getDeclContext()->getSelfClassDecl();
+        bool isFRTReceiver = selfClass && selfClass->isForeignReferenceType();
+        if (!isFRTReceiver) {
+          if (auto *FD = dyn_cast<FuncDecl>(D)) {
+            if (method->isConst() && FD->isMutating()) {
+              D->diagnose(diag::cxx_implementation_mutating_const_method);
+              return;
+            }
+            if (!method->isConst() && !FD->isMutating()) {
+              D->diagnose(diag::cxx_implementation_nonconst_needs_mutating);
+              return;
+            }
           }
         }
       }

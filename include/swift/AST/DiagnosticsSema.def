@@ -2198,8 +2198,9 @@ ERROR(cxx_implementation_indirect_virtual_base,none,
       "Swift cannot represent the layout of such a class",
       ())
 ERROR(cxx_implementation_foreign_reference_method,none,
-      "'@cxx @implementation' does not support implementing a C++ instance "
-      "method of a foreign-reference type (a 'SWIFT_SHARED_REFERENCE' class)",
+      "'@cxx @implementation' supports only non-virtual instance methods of a "
+      "foreign-reference type (a 'SWIFT_SHARED_REFERENCE' class); a virtual "
+      "method is dispatched through a thunk that is not yet matched",
       ())
 // A `@cxx @implementation` function that returns a foreign-reference type can
 // only be supported when the result is owned (+1): the Swift body produces a

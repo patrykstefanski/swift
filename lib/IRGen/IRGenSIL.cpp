@@ -2474,14 +2474,26 @@ static void emitEntryPointArgumentsCOrObjC(IRGenSILFunction &IGF,
 
     SILArgument *selfArg = args.back();
     args = args.slice(0, args.size() - 1);
-    assert(selfArg->getType().isAddress() &&
-           "C++ instance method self should be lowered indirectly");
 
-    auto &selfTI = IGF.getTypeInfo(selfArg->getType());
     llvm::Value *thisPtr = params.claimNext();
     thisPtr = IGF.Builder.CreateBitCast(thisPtr, IGF.IGM.PtrTy);
-    IGF.setLoweredAddress(selfArg, Address(thisPtr, selfTI.getStorageType(),
-                                           selfTI.getBestKnownAlignment()));
+    auto &selfTI = IGF.getTypeInfo(selfArg->getType());
+    if (selfArg->getType().isAddress()) {
+      // Value-type C++ record: `this` is the address of the (indirectly passed)
+      // self storage.
+      IGF.setLoweredAddress(selfArg, Address(thisPtr, selfTI.getStorageType(),
+                                             selfTI.getBestKnownAlignment()));
+    } else {
+      // Foreign-reference-type receiver: self is a direct, borrowed
+      // (`@unowned`) class reference whose value *is* the `this` pointer. Bind
+      // it as a loadable explosion rather than an address. (No retain: the
+      // receiver is borrowed, matching the +0 C++ `this`.)
+      assert(selfArg->getType().isForeignReferenceType() &&
+             "a non-address C++ method self must be a foreign-reference type");
+      Explosion selfExplosion;
+      selfExplosion.add(thisPtr);
+      IGF.setLoweredExplosion(selfArg, selfExplosion);
+    }
 
     // Skip the leading 'this' clang argument when emitting explicit parameters.
     nextArgTyIdx = 1;

@@ -2497,11 +2497,13 @@ void AttributeChecker::visitCxxDeclAttr(CxxDeclAttr *attr) {
       !importer::isClangCxxRecord(dc))
     diagnose(attr->getLocation(), diag::cdecl_not_at_top_level, attr);
 
-  // An instance method of a foreign-reference type is not yet supported (see
-  // isCxxForeignReferenceInstanceMethod). Reject it here so both the virtual
-  // and non-virtual cases get one clean diagnostic; the matcher's generic
-  // "could not find imported function" is suppressed for the same predicate.
-  if (isCxxForeignReferenceInstanceMethod(D))
+  // Phase 2 supports a *non-virtual* FRT instance method, which matches an
+  // imported C++ method. A *virtual* one is not yet supported: the importer
+  // surfaces a `__synthesizedVirtualCall_<name>` dynamic-dispatch thunk under the
+  // method name, so the matcher finds no interface. Diagnose only when no
+  // interface was matched (the virtual / unmatched case); a matched non-virtual
+  // method falls through and is implemented.
+  if (isCxxForeignReferenceInstanceMethod(D) && !D->getImplementedObjCDecl())
     diagnose(attr->getLocation(),
              diag::cxx_implementation_foreign_reference_method);
 
