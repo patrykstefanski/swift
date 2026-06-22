@@ -891,6 +891,15 @@ matchSwiftAttr(const clang::Decl *decl,
 std::optional<ResultConvention>
 getOwnershipOfReturnedFRT(const clang::NamedDecl *decl);
 
+/// If \p method is a synthesized `__synthesizedVirtualCall_<name>` forwarding
+/// thunk (which the importer surfaces for a polymorphic class's virtual method so
+/// that Swift dynamically dispatches it), return the original virtual C++ method
+/// it forwards to. Otherwise return \p method unchanged. Used by
+/// `@cxx @implementation` to recover the real method for matching, mangling, and
+/// vtable emission.
+const clang::CXXMethodDecl *
+getUnderlyingVirtualMethod(const clang::CXXMethodDecl *method);
+
 enum class RefCountedPtrError {
   NotAnnotated,
   MissingToRawPointer,

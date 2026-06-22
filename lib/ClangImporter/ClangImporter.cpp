@@ -6845,7 +6845,17 @@ findFunctionInterfaceAndImplementation(AbstractFunctionDecl *func) {
     if (!resultFunc)
       continue;
 
-    if (resultFunc->getCDeclName() != clangName)
+    StringRef resultName = resultFunc->getCDeclName();
+    // A virtual method of a foreign-reference type is imported as a synthesized
+    // `__synthesizedVirtualCall_` dynamic-dispatch thunk; match it against the
+    // real virtual method's name it forwards to.
+    if (auto *m =
+            dyn_cast_or_null<clang::CXXMethodDecl>(resultFunc->getClangDecl())) {
+      auto *orig = importer::getUnderlyingVirtualMethod(m);
+      if (orig != m && orig->getIdentifier())
+        resultName = orig->getName();
+    }
+    if (resultName != clangName)
       continue;
 
     if (resultFunc->hasClangNode())

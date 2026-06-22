@@ -1329,6 +1329,12 @@ static void mangleClangDeclViaImporter(raw_ostream &buffer,
 static std::string mangleClangDecl(Decl *decl, bool isForeign) {
   auto clangDecl = decl->getClangDecl();
 
+  // A `@cxx @implementation` of a virtual foreign-reference-type method matches a
+  // synthesized dynamic-dispatch thunk; emit the body under the *real* virtual
+  // method's mangled symbol so the vtable slot and C++ callers resolve to it.
+  if (auto *method = dyn_cast_or_null<clang::CXXMethodDecl>(clangDecl))
+    clangDecl = importer::getUnderlyingVirtualMethod(method);
+
   if (auto namedClangDecl = dyn_cast<clang::DeclaratorDecl>(clangDecl)) {
     if (auto asmLabel = namedClangDecl->getAttr<clang::AsmLabelAttr>()) {
       std::string s(1, '\01');

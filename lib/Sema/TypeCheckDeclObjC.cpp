@@ -30,6 +30,7 @@
 #include "swift/AST/TypeCheckRequests.h"
 #include "swift/Basic/Assertions.h"
 #include "swift/Basic/StringExtras.h"
+#include "swift/ClangImporter/ClangImporter.h"
 
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclObjC.h"
@@ -3234,6 +3235,10 @@ void TypeChecker::checkObjCImplementation(Decl *D) {
   if (D->getAttrs().hasAttribute<CxxDeclAttr>()) {
     if (auto *method = dyn_cast_or_null<clang::CXXMethodDecl>(
             interfaceDecl->getClangDecl())) {
+      // A virtual FRT method is matched via a synthesized dynamic-dispatch thunk;
+      // recover the real virtual method so the checks below (e.g. covariant
+      // returns, `isVirtual`) see the actual method.
+      method = importer::getUnderlyingVirtualMethod(method);
       // Reject a receiver C++ class whose value-type layout Swift cannot
       // represent: one with an *indirect* virtual base (a virtual base reached
       // through a non-virtual base). Lowering the method requires lowering the
@@ -3641,6 +3646,14 @@ private:
   }
 
   static ObjCSelector getObjCName(ValueDecl *VD) {
+    // A virtual method of a foreign-reference type is imported as a synthesized
+    // `__synthesizedVirtualCall_` thunk; compare against the real method's name.
+    if (auto *m = dyn_cast_or_null<clang::CXXMethodDecl>(VD->getClangDecl())) {
+      auto *orig = importer::getUnderlyingVirtualMethod(m);
+      if (orig != m && orig->getIdentifier())
+        return ObjCSelector(VD->getASTContext(), 0,
+                            { VD->getASTContext().getIdentifier(orig->getName()) });
+    }
     if (!VD->getCDeclName().empty()) {
       auto ident = VD->getASTContext().getIdentifier(VD->getCDeclName());
       return ObjCSelector(VD->getASTContext(), 0, { ident });

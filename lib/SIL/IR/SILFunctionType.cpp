@@ -4417,6 +4417,11 @@ getImplementedCXXInstanceMethod(const ValueDecl *decl) {
     return nullptr;
   auto *method =
       dyn_cast_or_null<clang::CXXMethodDecl>(interface->getClangDecl());
+  // For a virtual method of a foreign-reference type, the imported decl is a
+  // synthesized dynamic-dispatch thunk; recover the real method so the SIL type
+  // (self/const conventions, mangling) matches the C++ method.
+  if (method)
+    method = importer::getUnderlyingVirtualMethod(method);
   if (!method || method->isStatic() ||
       isa<clang::CXXConstructorDecl>(method) ||
       isa<clang::CXXDestructorDecl>(method))

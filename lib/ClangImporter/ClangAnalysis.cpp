@@ -5,7 +5,9 @@
 #include "swift/ClangImporter/ClangImporterRequests.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclObjC.h"
+#include "clang/AST/Expr.h"
 #include "clang/AST/RecordLayout.h"
+#include "clang/AST/Stmt.h"
 #include "clang/AST/Type.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -433,4 +435,29 @@ swift::importer::getOwnershipOfReturnedFRT(const clang::NamedDecl *decl) {
   }
 
   return std::nullopt;
+}
+
+const clang::CXXMethodDecl *
+swift::importer::getUnderlyingVirtualMethod(const clang::CXXMethodDecl *method) {
+  if (!method)
+    return method;
+  auto *id = method->getIdentifier();
+  if (!id || !id->getName().starts_with("__synthesizedVirtualCall_"))
+    return method;
+
+  // The thunk's body is `return this->orig(args);`. Recover `orig` from the
+  // member-call expression.
+  if (auto *ret = dyn_cast_or_null<clang::ReturnStmt>(method->getBody())) {
+    const clang::Expr *value = ret->getRetValue();
+    if (value)
+      value = value->IgnoreImplicit();
+    if (auto *call = dyn_cast_or_null<clang::CallExpr>(value)) {
+      const clang::Expr *callee = call->getCallee()->IgnoreImplicit();
+      if (auto *member = dyn_cast_or_null<clang::MemberExpr>(callee))
+        if (auto *orig =
+                dyn_cast_or_null<clang::CXXMethodDecl>(member->getMemberDecl()))
+          return orig;
+    }
+  }
+  return method;
 }

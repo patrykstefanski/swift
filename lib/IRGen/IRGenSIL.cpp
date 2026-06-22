@@ -31,6 +31,7 @@
 #include "swift/Basic/Assertions.h"
 #include "swift/Basic/ExternalUnion.h"
 #include "swift/Basic/Range.h"
+#include "swift/ClangImporter/ClangImporter.h"
 #include "swift/IRGen/GenericRequirement.h"
 #include "swift/IRGen/Linking.h"
 #include "swift/SIL/ApplySite.h"
@@ -2655,6 +2656,10 @@ static void emitCxxImplementationVTableIfNeeded(IRGenModule &IGM,
     return;
   auto *method =
       dyn_cast_or_null<clang::CXXMethodDecl>(interface->getClangDecl());
+  // For a virtual FRT method the imported decl is a synthesized dynamic-dispatch
+  // thunk; recover the real virtual method so we emit *its* class's vtable.
+  if (method)
+    method = importer::getUnderlyingVirtualMethod(method);
   if (!method || !method->isVirtual())
     return;
   // Emit the vtable/RTTI/thunks clang would normally emit alongside this
