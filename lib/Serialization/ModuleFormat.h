@@ -2331,6 +2331,12 @@ namespace decls_block {
     BCBlob      // cname
   >;
 
+  using CxxDeclDeclAttrLayout = BCRecordLayout<
+    CxxDecl_DECL_ATTR,
+    BCFixed<1>, // implicit flag
+    BCBlob      // cxx name
+  >;
+
   using ImplementsDeclAttrLayout = BCRecordLayout<
     Implements_DECL_ATTR,
     BCFixed<1>,  // implicit flag

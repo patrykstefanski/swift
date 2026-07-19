@@ -3791,10 +3791,26 @@ public:
       }
     }
 
-    // If the function is exported to C, it must be representable in (Obj-)C.
-    if (auto CDeclAttr = FD->getAttrs().getAttribute<swift::CDeclAttr>()) {
+    // If the function is exported to a foreign language, its signature must be
+    // representable in that language. The same request handles all of them:
+    //   * @c / @_cdecl carry a `CDeclAttr` (C, or implicit Objective-C);
+    //   * @cxx carries a `CxxDeclAttr` (C++).
+    // We look up whichever foreign-language attribute is attached and hand it
+    // to the request as a `DeclAttribute *`. The request recovers the concrete
+    // language via `FuncDecl::getCDeclKind()`.
+    //
+    // NOTE: historically this only fired for `CDeclAttr`, so a bare `@cxx`
+    // function's signature was never checked for C++ representability, and the
+    // throws/async rejection inside the request never ran for `@cxx`. Looking
+    // up `CxxDeclAttr` here is what makes the `ForeignLanguage::Cxx` handling in
+    // `TypeCheckCDeclFunctionRequest::evaluate` actually reachable.
+    DeclAttribute *foreignLangAttr =
+        FD->getAttrs().getAttribute<swift::CDeclAttr>();
+    if (!foreignLangAttr)
+      foreignLangAttr = FD->getAttrs().getAttribute<swift::CxxDeclAttr>();
+    if (foreignLangAttr) {
       evaluateOrDefault(Ctx.evaluator,
-                        TypeCheckCDeclFunctionRequest{FD, CDeclAttr},
+                        TypeCheckCDeclFunctionRequest{FD, foreignLangAttr},
                         {});
     }
 

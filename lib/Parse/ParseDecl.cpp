@@ -3106,6 +3106,60 @@ ParserStatus Parser::parseNewDeclAttribute(DeclAttributes &Attributes,
     break;
   }
 
+  case DeclAttrKind::CxxDecl: {
+    StringRef CxxName;
+    if (consumeIfAttributeLParen()) {
+      // Parse the `name: "..."` argument: the unqualified C++ function name the
+      // importer matches against. This is a source name, not a mangled symbol;
+      // the emitted symbol comes from the matched C++ declaration's mangling.
+      // On a malformed argument, skip to the closing paren so the rest of the
+      // declaration still parses cleanly.
+      auto skipToEnd = [&]() {
+        skipUntil(tok::r_paren);
+        consumeIf(tok::r_paren);
+      };
+      if (Tok.isNot(tok::identifier) || Tok.getText() != "name") {
+        diagnose(Loc, diag::attr_cxx_expected_name_label);
+        skipToEnd();
+        return makeParserSuccess();
+      }
+      consumeToken(tok::identifier);
+
+      if (!consumeIf(tok::colon)) {
+        diagnose(Tok.getLoc(), diag::attr_expected_colon_after_label, "name");
+        skipToEnd();
+        return makeParserSuccess();
+      }
+
+      if (Tok.isNot(tok::string_literal)) {
+        diagnose(Loc, diag::attr_expected_string_literal, AttrName);
+        skipToEnd();
+        return makeParserSuccess();
+      }
+      std::optional<StringRef> parsedName =
+          getStringLiteralIfNotInterpolated(Loc, ("'" + AttrName + "'").str());
+      consumeToken(tok::string_literal);
+      if (!parsedName) {
+        skipToEnd();
+        return makeParserSuccess();
+      }
+      CxxName = *parsedName;
+
+      AttrRange = SourceRange(Loc, Tok.getRange().getStart());
+      if (!consumeIf(tok::r_paren)) {
+        diagnose(Loc, diag::attr_expected_rparen, AttrName,
+                 DeclAttribute::isDeclModifier(DK));
+        return makeParserSuccess();
+      }
+    } else {
+      AttrRange = SourceRange(Loc);
+    }
+
+    Attributes.add(new (Context) CxxDeclAttr(CxxName, AtLoc, AttrRange,
+                                             /*Implicit=*/false));
+    break;
+  }
+
   case DeclAttrKind::CDecl: {
     if (AttrName == "c") {
       std::optional<StringRef> CName;

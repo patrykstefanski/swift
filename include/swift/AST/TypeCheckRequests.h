@@ -5044,11 +5044,21 @@ public:
   bool isCached() const { return true; }
 };
 
-/// Check @c functions for compatibility with the foreign language.
+/// Check a function that is exported to a foreign language for compatibility
+/// with that language.
+///
+/// This covers `@c`/`@_cdecl` (C), implicit Objective-C `@_cdecl`, and `@cxx`
+/// (C++). The attribute is taken as a generic `DeclAttribute *` rather than a
+/// `CDeclAttr *` on purpose: `@cxx` is modelled by `CxxDeclAttr`, which is a
+/// *sibling* of `CDeclAttr` (both derive from `DeclAttribute`), not a subclass.
+/// The concrete foreign language is recovered from `FuncDecl::getCDeclKind()`;
+/// the attribute itself is only needed for its source location (for
+/// diagnostics) and to be marked invalid when the signature is not
+/// representable.
 class TypeCheckCDeclFunctionRequest
     : public SimpleRequest<TypeCheckCDeclFunctionRequest,
                            evaluator::SideEffect(FuncDecl *FD,
-                                                 CDeclAttr *attr),
+                                                 DeclAttribute *attr),
                            RequestFlags::Cached> {
 public:
   using SimpleRequest::SimpleRequest;
@@ -5057,7 +5067,7 @@ private:
   friend SimpleRequest;
 
   evaluator::SideEffect
-  evaluate(Evaluator &evaluator, FuncDecl *FD, CDeclAttr *attr) const;
+  evaluate(Evaluator &evaluator, FuncDecl *FD, DeclAttribute *attr) const;
 
 public:
   bool isCached() const { return true; }

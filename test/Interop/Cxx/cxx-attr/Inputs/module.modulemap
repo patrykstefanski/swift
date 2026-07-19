@@ -1,0 +1,9 @@
+module GlobalFunctions {
+  header "global-functions.h"
+  requires cplusplus
+}
+
+module InternalLinkage {
+  header "internal-linkage.h"
+  requires cplusplus
+}

@@ -6835,23 +6835,54 @@ static void lookupRelatedFuncs(AbstractFunctionDecl *func,
   else
     swiftName = func->getName();
 
+  ASTContext &ctx = func->getASTContext();
+
+  // An explicit `@cxx(name:)` lets the Swift function be named differently from
+  // the C++ function it implements. The imported declaration is named after the
+  // *C++* name, so a lookup by `swiftName` alone would never surface it as a
+  // candidate and matching would fail. When the explicit C++ name differs from
+  // the Swift base name, also look candidates up under that C++ base name. (We
+  // scope this to `@cxx`; `@c`/SE-0495 keeps its existing by-Swift-name
+  // behavior.)
+  DeclName foreignName;
+  if (auto cxxAttr = func->getAttrs().getAttribute<CxxDeclAttr>()) {
+    if (!cxxAttr->Name.empty() &&
+        cxxAttr->Name != swiftName.getBaseName().userFacingName())
+      foreignName = DeclName(ctx.getIdentifier(cxxAttr->Name));
+  }
+
   if (auto ty = func->getDeclContext()->getSelfNominalTypeDecl()) {
     NLOptions options = {NLFlags::IgnoreAccessControl, NLFlags::IgnoreMissingImports};
     ty->lookupQualified({ ty }, DeclNameRef(swiftName), func->getLoc(),
                         (NLFlags::QualifiedDefault) | options, results);
+
+    if (foreignName) {
+      SmallVector<ValueDecl *, 4> extra;
+      ty->lookupQualified({ ty }, DeclNameRef(foreignName), func->getLoc(),
+                          (NLFlags::QualifiedDefault) | options, extra);
+      for (auto *vd : extra)
+        if (!llvm::is_contained(results, vd))
+          results.push_back(vd);
+    }
   }
   else {
-    ASTContext &ctx = func->getASTContext();
     UnqualifiedLookupOptions options =
       UnqualifiedLookupFlags::IgnoreAccessControl;
-    UnqualifiedLookupDescriptor descriptor(
-        DeclNameRef(ctx, Identifier(), swiftName), func->getDeclContext(),
-        func->getLoc(), options);
-    auto lookup = evaluateOrDefault(func->getASTContext().evaluator,
-                                    UnqualifiedLookupRequest{descriptor}, {});
-    for (const auto &result : lookup) {
-      results.push_back(result.getValueDecl());
-    }
+    auto doLookup = [&](DeclName name) {
+      UnqualifiedLookupDescriptor descriptor(
+          DeclNameRef(ctx, Identifier(), name), func->getDeclContext(),
+          func->getLoc(), options);
+      auto lookup = evaluateOrDefault(ctx.evaluator,
+                                      UnqualifiedLookupRequest{descriptor}, {});
+      for (const auto &result : lookup) {
+        ValueDecl *vd = result.getValueDecl();
+        if (!llvm::is_contained(results, vd))
+          results.push_back(vd);
+      }
+    };
+    doLookup(swiftName);
+    if (foreignName)
+      doLookup(foreignName);
   }
 }
 

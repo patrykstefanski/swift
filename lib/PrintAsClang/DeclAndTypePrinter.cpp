@@ -3154,6 +3154,11 @@ bool DeclAndTypePrinter::shouldInclude(const ValueDecl *VD) {
   std::optional<ForeignLanguage> cdeclKind = std::nullopt;
   if (auto *FD = dyn_cast<AbstractFunctionDecl>(VD))
     cdeclKind = FD->getCDeclKind();
+
+  // FIXME: Should we actually print it?
+  if (cdeclKind == ForeignLanguage::Cxx)
+    return false;
+
   if (cdeclKind &&
       (*cdeclKind == ForeignLanguage::C) !=
        (outputLang == OutputLanguageMode::C))

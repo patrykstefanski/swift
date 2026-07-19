@@ -48,6 +48,7 @@ swift::behaviorLimitForObjCReason(ObjCReason reason, ASTContext &ctx) {
     LLVM_FALLTHROUGH;
 
   case ObjCReason::ExplicitlyCDecl:
+  case ObjCReason::ExplicitlyCxxDecl:
   case ObjCReason::ExplicitlyUnderscoreCDecl:
   case ObjCReason::ExplicitlyDynamic:
   case ObjCReason::ExplicitlyObjC:
@@ -82,6 +83,7 @@ swift::behaviorLimitForObjCReason(ObjCReason reason, ASTContext &ctx) {
 unsigned swift::getObjCDiagnosticAttrKind(ObjCReason reason) {
   switch (reason) {
   case ObjCReason::ExplicitlyCDecl:
+  case ObjCReason::ExplicitlyCxxDecl:
   case ObjCReason::ExplicitlyUnderscoreCDecl:
   case ObjCReason::ExplicitlyDynamic:
   case ObjCReason::ExplicitlyObjC:
@@ -134,6 +136,7 @@ void ObjCReason::describe(const Decl *D) const {
 
   case ObjCReason::ExplicitlyObjCByAccessNote:
   case ObjCReason::ExplicitlyCDecl:
+  case ObjCReason::ExplicitlyCxxDecl:
   case ObjCReason::ExplicitlyUnderscoreCDecl:
   case ObjCReason::ExplicitlyDynamic:
   case ObjCReason::ExplicitlyObjC:
@@ -724,6 +727,7 @@ bool swift::isRepresentableInLanguage(
     auto storage = accessor->getStorage();
     bool storageIsObjC = storage->isObjC()
         || Reason == ObjCReason::ExplicitlyCDecl
+        || Reason == ObjCReason::ExplicitlyCxxDecl
         || Reason == ObjCReason::ExplicitlyUnderscoreCDecl
         || Reason == ObjCReason::WitnessToObjC
         || Reason == ObjCReason::MemberOfObjCProtocol;
@@ -3519,6 +3523,15 @@ private:
       auto ident = VD->getASTContext().getIdentifier(cdeclAttr->Name);
       return ObjCSelector(VD->getASTContext(), 0, { ident });
     }
+    if (auto cxxAttr = VD->getAttrs().getAttribute<CxxDeclAttr>()) {
+      // An explicit `@cxx(name:)` names the C++ function to match; treat it as
+      // the explicit "selector". A bare `@cxx` (empty name) falls through to
+      // ordinary by-name matching.
+      if (!cxxAttr->Name.empty()) {
+        auto ident = VD->getASTContext().getIdentifier(cxxAttr->Name);
+        return ObjCSelector(VD->getASTContext(), 0, { ident });
+      }
+    }
     if (auto objcAttr = VD->getAttrs().getAttribute<ObjCAttr>())
       if (!objcAttr->isNameImplicit())
         return objcAttr->getName().value_or(ObjCSelector());
@@ -3867,8 +3880,17 @@ private:
     if (explicitObjCName && getObjCName(req) != explicitObjCName)
       return MatchOutcome::WrongExplicitObjCName;
 
-    if (!hasSwiftNameMatch)
-      return MatchOutcome::WrongSwiftName;
+    if (!hasSwiftNameMatch) {
+      // A `@cxx(name:)` implementation may be named differently from the C++
+      // function it implements. The explicit C++ name -- already verified to
+      // match the requirement just above -- is the authoritative match key, so
+      // a Swift-name difference is expected and fine. (Scoped to `@cxx`;
+      // `@c`/`@objc` keep requiring matching Swift names.)
+      bool cxxExplicitNameMatch =
+          explicitObjCName && cand->getAttrs().hasAttribute<CxxDeclAttr>();
+      if (!cxxExplicitNameMatch)
+        return MatchOutcome::WrongSwiftName;
+    }
 
     if (!hasObjCNameMatch)
       return MatchOutcome::WrongImplicitObjCName;
@@ -4249,14 +4271,23 @@ evaluate(Evaluator &evaluator, Decl *D) const {
 evaluator::SideEffect
 TypeCheckCDeclFunctionRequest::evaluate(Evaluator &evaluator,
                                         FuncDecl *FD,
-                                        CDeclAttr *attr) const {
+                                        DeclAttribute *attr) const {
   auto &ctx = FD->getASTContext();
 
+  // Recover the concrete foreign language from the function itself. This is
+  // ForeignLanguage::C for @c/@_cdecl, ObjectiveC for the implicit-Objective-C
+  // @_cdecl form, and Cxx for @cxx. `attr` (a CDeclAttr or CxxDeclAttr) is only
+  // used below for its source location and to be marked invalid, so it is fine
+  // to take it as the common DeclAttribute base.
   auto lang = FD->getCDeclKind();
-  assert(lang && "missing @c?");
-  auto kind = lang == ForeignLanguage::ObjectiveC
-                      ? ObjCReason::ExplicitlyUnderscoreCDecl
-                      : ObjCReason::ExplicitlyCDecl;
+  assert(lang && "missing @c/@cxx?");
+  ObjCReason::Kind kind;
+  if (*lang == ForeignLanguage::ObjectiveC)
+    kind = ObjCReason::ExplicitlyUnderscoreCDecl;
+  else if (*lang == ForeignLanguage::Cxx)
+    kind = ObjCReason::ExplicitlyCxxDecl;
+  else
+    kind = ObjCReason::ExplicitlyCDecl;
   ObjCReason reason(kind, attr);
 
   std::optional<ForeignAsyncConvention> asyncConvention;
