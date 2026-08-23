@@ -2301,10 +2301,20 @@ ERROR(cxx_mutating_mismatch,none,
       "%kind0 should%select{|| not}1 be 'mutating' to match "
       "%select{non-'const' ||'const' }1%kindonly2 declared by the header",
       (ValueDecl *, unsigned, const ValueDecl *))
-ERROR(cxx_references_unsupported,none,
-      "%kind0 cannot implement C++ function '%1' because reference "
+ERROR(cxx_rvalue_references_unsupported,none,
+      "%kind0 cannot implement C++ function '%1' because rvalue reference "
       "parameters and return types are not yet supported",
       (ValueDecl *, StringRef))
+ERROR(cxx_references_require_unsafe,none,
+      "%kind0 must be marked '@unsafe' to implement C++ function '%1'",
+      (ValueDecl *, StringRef))
+NOTE(cxx_reference_param_aliasing,none,
+     "C++ callers may %select{modify %kind0 through another reference during "
+     "the call|violate exclusive access to 'inout' %kind0}1",
+     (ValueDecl *, bool))
+NOTE(cxx_reference_param_declared_here,none,
+     "%select{parameter|%1}0 declared as a C++ reference here",
+     (bool, const clang::NamedDecl *))
 
 // @used and @section
 ERROR(section_empty_name,none,
