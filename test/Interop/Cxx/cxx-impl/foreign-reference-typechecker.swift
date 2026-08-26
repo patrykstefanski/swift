@@ -121,7 +121,6 @@ extension Node {
 // A virtual method of a foreign reference type.
 
 extension Polymorphic {
-  // expected-error@+2{{instance method 'virtualMethod()' cannot implement C++ function 'virtualMethod' because it is its class's key function, and Swift cannot yet emit the class's vtable, which C++ emits in the translation unit that defines the key function; declare another out-of-line virtual method earlier in the class to make that method the key function}}
   @cxx @implementation
   func virtualMethod() -> Int32 { return 0 }
 
