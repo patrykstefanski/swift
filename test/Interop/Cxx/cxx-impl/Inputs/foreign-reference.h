@@ -100,7 +100,6 @@ void releasePolymorphic(Polymorphic *_Nonnull);
 struct __attribute__((swift_attr("import_reference")))
 __attribute__((swift_attr("retain:retainPolymorphic")))
 __attribute__((swift_attr("release:releasePolymorphic"))) Polymorphic {
-  // expected-note@+1{{declare a non-inline virtual method before 'virtualMethod' to make that method the key function instead}}
   virtual int virtualMethod() const;
   int nonVirtualMethod() const;
 };

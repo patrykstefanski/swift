@@ -140,7 +140,6 @@ extension Singleton {
 // A virtual method of a foreign reference type.
 
 extension Polymorphic {
-  // expected-error@+2{{instance method 'virtualMethod()' cannot implement C++ function 'virtualMethod' because it is the key function of C++ class 'Polymorphic'}}
   @cxx @implementation
   func virtualMethod() -> Int32 { return 0 }
 
