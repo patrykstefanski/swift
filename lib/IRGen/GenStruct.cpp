@@ -664,6 +664,28 @@ namespace {
       return nullptr;
     }
 
+    /// Emits \p body unless \p dest and \p src are the same address. The
+    /// assignment witnesses destroy the destination before constructing the
+    /// new value into it from the source, which cannot work when the two
+    /// alias: `copy_addr` permits identical operands, and assigning a value to
+    /// itself must leave it intact.
+    void emitUnlessAliasing(IRGenFunction &IGF, Address dest, Address src,
+                            llvm::function_ref<void()> body) const {
+      auto &C = IGF.IGM.getLLVMContext();
+      auto *noAliasBB = llvm::BasicBlock::Create(C);
+      auto *endBB = llvm::BasicBlock::Create(C);
+      llvm::Value *alias =
+          IGF.Builder.CreateICmpEQ(dest.getAddress(), src.getAddress());
+      IGF.Builder.CreateCondBr(alias, endBB, noAliasBB);
+      IGF.Builder.emitBlock(noAliasBB);
+      {
+        ConditionalDominanceScope condition(IGF);
+        body();
+      }
+      IGF.Builder.CreateBr(endBB);
+      IGF.Builder.emitBlock(endBB);
+    }
+
     const clang::CXXConstructorDecl *findMoveConstructor() const {
       const auto *cxxRecordDecl = dyn_cast<clang::CXXRecordDecl>(ClangDecl);
       if (!cxxRecordDecl)
@@ -940,10 +962,12 @@ namespace {
     void assignWithCopy(IRGenFunction &IGF, Address destAddr, Address srcAddr,
                         SILType T, bool isOutlined) const override {
       if (auto copyConstructor = findCopyConstructor()) {
-        destroy(IGF, destAddr, T, isOutlined);
-        emitCopyWithCopyOrMoveConstructor(IGF, T, copyConstructor,
-                                          srcAddr.getAddress(),
-                                          destAddr.getAddress());
+        emitUnlessAliasing(IGF, destAddr, srcAddr, [&] {
+          destroy(IGF, destAddr, T, isOutlined);
+          emitCopyWithCopyOrMoveConstructor(IGF, T, copyConstructor,
+                                            srcAddr.getAddress(),
+                                            destAddr.getAddress());
+        });
         return;
       }
       StructTypeInfoBase<AddressOnlyCXXClangRecordTypeInfo, FixedTypeInfo,
@@ -976,18 +1000,24 @@ namespace {
     void assignWithTake(IRGenFunction &IGF, Address dest, Address src, SILType T,
                         bool isOutlined) const override {
       if (auto moveConstructor = findMoveConstructor()) {
-        destroy(IGF, dest, T, isOutlined);
-        emitCopyWithCopyOrMoveConstructor(IGF, T, moveConstructor,
-                                          src.getAddress(), dest.getAddress());
-        destroy(IGF, src, T, isOutlined);
+        emitUnlessAliasing(IGF, dest, src, [&] {
+          destroy(IGF, dest, T, isOutlined);
+          emitCopyWithCopyOrMoveConstructor(IGF, T, moveConstructor,
+                                            src.getAddress(),
+                                            dest.getAddress());
+          destroy(IGF, src, T, isOutlined);
+        });
         return;
       }
 
       if (auto copyConstructor = findCopyConstructor()) {
-        destroy(IGF, dest, T, isOutlined);
-        emitCopyWithCopyOrMoveConstructor(IGF, T, copyConstructor,
-                                          src.getAddress(), dest.getAddress());
-        destroy(IGF, src, T, isOutlined);
+        emitUnlessAliasing(IGF, dest, src, [&] {
+          destroy(IGF, dest, T, isOutlined);
+          emitCopyWithCopyOrMoveConstructor(IGF, T, copyConstructor,
+                                            src.getAddress(),
+                                            dest.getAddress());
+          destroy(IGF, src, T, isOutlined);
+        });
         return;
       }
 

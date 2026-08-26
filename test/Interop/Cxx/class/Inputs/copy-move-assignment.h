@@ -98,3 +98,17 @@ struct NonTrivialCopyAndCopyMoveAssign {
     int assignCounter;
     InstanceBalanceCounter instanceBalancer;
 };
+
+struct NonTrivialSelfAssign {
+    __attribute__((optnone))
+    NonTrivialSelfAssign(int value) : value(value) {}
+    __attribute__((optnone))
+    NonTrivialSelfAssign(const NonTrivialSelfAssign &other) : value(other.value) {}
+    __attribute__((optnone))
+    ~NonTrivialSelfAssign() {
+        value = -1;
+    }
+
+    int value;
+    InstanceBalanceCounter instanceBalancer;
+};
