@@ -130,7 +130,7 @@ extension Holder {
   // CHECK:         debug_value [[SELF]], let, name "self", argno 2
   @cxx @implementation
   public func spread(_ k: Int32) -> Triple {
-    return Triple(a: CLong(value), b: CLong(k), c: CLong(value + k))
+    return Triple(a: Int64(value), b: Int64(k), c: Int64(value + k))
   }
 }
 

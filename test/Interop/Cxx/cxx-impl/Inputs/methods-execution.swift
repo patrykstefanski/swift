@@ -44,12 +44,14 @@ extension Holder {
   // Triple Holder::spread(int k) const;
   @cxx @implementation
   public func spread(_ k: Int32) -> Triple {
-    return Triple(a: CLong(value), b: CLong(k), c: CLong(value + k))
+    return Triple(a: Int64(value), b: Int64(k), c: Int64(value + k))
   }
 
-  // static Triple Holder::makeTriple(long a);
+  // static Triple Holder::makeTriple(int a);
   @cxx @implementation
-  public static func makeTriple(_ a: CLong) -> Triple { return Triple(a: a, b: a + 1, c: a + 2) }
+  public static func makeTriple(_ a: Int32) -> Triple {
+    return Triple(a: Int64(a), b: Int64(a) + 1, c: Int64(a) + 2)
+  }
 }
 
 extension NonTrivialReceiver {
