@@ -34,3 +34,19 @@ extension Concrete {
   @cxx @implementation
   public func run() -> Int32 { return 1 }
 }
+
+extension KeyDerived {
+  // int KeyDerived::describe() const override;
+  @cxx @implementation
+  public func describe() -> Int32 { return super.describe() + 100 }
+}
+
+extension MI {
+  // int MI::side() const override;
+  @cxx @implementation
+  public func side() -> Int32 { return value * 10 }
+
+  // int MI::describe() const override;
+  @cxx @implementation
+  public func describe() -> Int32 { return super.describe() * 3 }
+}

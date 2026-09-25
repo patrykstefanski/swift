@@ -47,12 +47,16 @@
 
 #include "foreign-reference-virtual.h"
 
-// The key functions.
+// The key functions, except KeyDerived's.
 void Base::baseAnchor() {}
 void Derived::derivedAnchor() {}
 void Leaf::leafAnchor() {}
 void AbstractBase::abAnchor() {}
 void Concrete::concreteAnchor() {}
+void MI::miAnchor() {}
+
+int Unrelated::side() const { return -1; }
+Unrelated::~Unrelated() {}
 
 #ifndef SWIFT_BASE
 // The Swift implementations return 1000 more.
@@ -78,6 +82,9 @@ __attribute__((noinline)) static int callScaled(const Base *base, int factor) {
 }
 __attribute__((noinline)) static int callRun(const AbstractBase *base) {
   return base->run();
+}
+__attribute__((noinline)) static int callSide(const Unrelated *base) {
+  return base->side();
 }
 
 int main() {
@@ -108,6 +115,26 @@ int main() {
   int run = callRun(&concrete);
   printf("run=%d live=%d\n", run, liveAbstractBases);
   // CHECK: run=1 live=0
+
+  // KeyDerived::describe adds 100 to Base::describe; Swift emits the vtable.
+  KeyDerived keyDerived;
+  keyDerived.value = 4;
+  describe = callDescribe(&keyDerived);
+  printf("keyDerived describe=%d live=%d\n", describe, liveBases);
+  // CXX-BASE: keyDerived describe=104 live=0
+  // SWIFT-BASE: keyDerived describe=1104 live=0
+
+  // MI::side is reached through its this-adjusting thunk.
+  MI mi;
+  mi.value = 2;
+  int side = callSide(&mi);
+  printf("mi side=%d live=%d\n", side, liveBases);
+  // CHECK: mi side=20 live=0
+
+  describe = callDescribe(&mi);
+  printf("mi describe=%d live=%d\n", describe, liveBases);
+  // CXX-BASE: mi describe=6 live=0
+  // SWIFT-BASE: mi describe=3006 live=0
 
   return 0;
 }

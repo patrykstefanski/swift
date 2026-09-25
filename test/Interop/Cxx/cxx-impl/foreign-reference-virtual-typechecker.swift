@@ -50,6 +50,25 @@ extension Concrete {
 }
 
 
+// The override is the key function.
+
+extension KeyDerived {
+  @cxx @implementation
+  public func describe() -> Int32 { return super.describe() + 100 }
+}
+
+
+// An override of a non-primary base's method.
+
+extension MI {
+  @cxx @implementation
+  public func side() -> Int32 { return value * 10 }
+
+  @cxx @implementation
+  public func describe() -> Int32 { return super.describe() * 3 }
+}
+
+
 // Rejections
 
 extension Rejections {

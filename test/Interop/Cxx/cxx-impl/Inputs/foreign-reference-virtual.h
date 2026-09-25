@@ -2,7 +2,7 @@
 #define TEST_INTEROP_CXX_CXX_IMPL_FOREIGN_REFERENCE_VIRTUAL_H
 
 // Foreign reference types with foreign reference bases, which import as Swift
-// subclasses. The key functions stay in C++.
+// subclasses. The key functions stay in C++, except KeyDerived's.
 
 struct Base;
 void retainBase(Base *_Nonnull);
@@ -47,6 +47,23 @@ __attribute__((swift_attr("release:releaseAbstractBase"))) AbstractBase {
 struct Concrete : AbstractBase {
   virtual void concreteAnchor();
   int run() const override;
+};
+
+// The override is the key function.
+struct KeyDerived : Base {
+  int describe() const override;
+};
+
+// The override of a non-primary base's method needs a this-adjusting thunk.
+struct Unrelated {
+  virtual int side() const;
+  virtual ~Unrelated();
+};
+
+struct MI : Base, Unrelated {
+  virtual void miAnchor();
+  int side() const override;
+  int describe() const override;
 };
 
 // Rejections
