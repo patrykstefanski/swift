@@ -2262,6 +2262,9 @@ ERROR(cxx_incompatible_with_objc,none,
 ERROR(cxx_incompatible_with_cdecl,none,
       "cannot apply both '@cxx' and '%0' to %kindonly1",
       (DeclAttribute, const Decl *))
+ERROR(cxx_incompatible_with_override,none,
+      "'override' cannot be applied to %kindonly0 marked '@cxx'; whether it "
+      "overrides is declared in C++", (const Decl *))
 ERROR(cxx_attr_requires_implementation,none,
       "'@cxx' must be combined with '@implementation'",
       ())

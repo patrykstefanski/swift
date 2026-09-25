@@ -1496,13 +1496,21 @@ checkPotentialOverrides(ValueDecl *decl,
   return true;
 }
 
+/// A @cxx @implementation overrides nothing in Swift.
+static bool isCxxImplementation(const ValueDecl *decl) {
+  return decl->getAttrs().hasAttribute<CxxDeclAttr>() &&
+         decl->isObjCImplementation();
+}
+
 /// Determine which method or subscript this method or subscript overrides
 /// (if any).
 ///
 /// \returns true if an error occurred.
 bool swift::checkOverrides(ValueDecl *decl) {
   // If there is a @_nonoverride attribute, this does not override anything.
-  if (decl->getAttrs().hasAttribute<NonOverrideAttr>())
+  // Neither does a @cxx @implementation.
+  if (decl->getAttrs().hasAttribute<NonOverrideAttr>() ||
+      isCxxImplementation(decl))
     return false;
 
   // If we already computed overridden declarations and either succeeded
@@ -2394,7 +2402,9 @@ computeOverriddenDecls(ValueDecl *decl, bool ignoreMissingImports) {
   auto noResults = llvm::TinyPtrVector<ValueDecl *>();
 
   // If there is a @_nonoverride attribute, this does not override anything.
-  if (decl->getAttrs().hasAttribute<NonOverrideAttr>())
+  // Neither does a @cxx @implementation.
+  if (decl->getAttrs().hasAttribute<NonOverrideAttr>() ||
+      isCxxImplementation(decl))
     return noResults;
 
   // For an associated type, compute the (minimized) set of overridden
