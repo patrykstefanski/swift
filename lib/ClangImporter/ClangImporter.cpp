@@ -7124,6 +7124,9 @@ static void lookupRelatedFuncs(AbstractFunctionDecl *func,
         if (name.isCompoundName() && isa<AbstractFunctionDecl>(vd) &&
             vd->getName() != name)
           continue;
+        // Skip the members that a foreign reference type inherits.
+        if (vd->getDeclContext()->getSelfNominalTypeDecl() != ty)
+          continue;
         results.insert(vd);
       }
     };
