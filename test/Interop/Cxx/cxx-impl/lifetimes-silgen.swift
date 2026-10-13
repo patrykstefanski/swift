@@ -44,6 +44,16 @@ public func viewMutableInt(_ x: inout CInt) -> IntView {
   return IntView(value: nil)
 }
 
+// A reference result is an Escapable pointer, so it depends on nothing.
+// const int &pick(const int &a [[clang::lifetimebound]], const int &b);
+// CHECK-LABEL: sil [asmname "{{.*}}pick{{.*}}"] [ossa] @$s4main4pickySPys5Int32VGAD_ADtFTo : $@convention(c) (@in_guaranteed Int32, @in_guaranteed Int32) -> UnsafePointer<Int32> {
+// CHECK:       bb0(%0 : @noImplicitCopy $*Int32, %1 : @noImplicitCopy $*Int32):
+// CHECK-NEXT:    load [trivial] %0
+@unsafe @cxx @implementation
+public func pick(_ a: borrowing CInt, _ b: borrowing CInt) -> UnsafePointer<CInt> {
+  return UnsafePointer(bitPattern: 1)!
+}
+
 extension Owner {
   // const int &Owner::get() const [[clang::lifetimebound]];
   // CHECK-LABEL: sil [asmname "{{.*}}get{{.*}}"] [ossa] @$sSo5OwnerV4mainE3getSPys5Int32VGyFTo : $@convention(cxx_method) (@in_guaranteed Owner) -> UnsafePointer<Int32> {

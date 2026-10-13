@@ -26,6 +26,7 @@
 #include "swift/AST/ExistentialLayout.h"
 #include "swift/AST/ForeignErrorConvention.h"
 #include "swift/AST/ImportCache.h"
+#include "swift/AST/LifetimeDependence.h"
 #include "swift/AST/ParameterList.h"
 #include "swift/AST/PrettyStackTrace.h"
 #include "swift/AST/SourceFile.h"
@@ -4159,7 +4160,7 @@ private:
     return FunctionType::get(fnTy->getParams(), {}, result, fnTy->getExtInfo());
   }
 
-  static Type getMemberType(ValueDecl *decl) {
+  static Type getMemberType(ValueDecl *decl, bool isCxx = false) {
     Type type;
     if (auto fn = dyn_cast<AbstractFunctionDecl>(decl))
       if (fn->hasImplicitSelfDecl())
@@ -4167,7 +4168,47 @@ private:
         type = fn->getMethodInterfaceType();
     if (!type)
       type = decl->getInterfaceType();
-    return restoreCxxOperatorResult(decl, type);
+    type = restoreCxxOperatorResult(decl, type);
+    // diagnoseInvalidCxxMatch compares the lifetime dependencies of a `@cxx`
+    // implementation, including those of a method.
+    if (isCxx)
+      if (auto *fnTy = type->getAs<AnyFunctionType>())
+        type =
+            fnTy->withExtInfo(fnTy->getExtInfo().withLifetimeDependencies({}));
+    return type;
+  }
+
+  /// Collects the lifetime dependencies of \p decl, a function or method, into
+  /// \p result, without those targeting an Escapable value, which Swift drops
+  /// (the importer records them for C++ reference results). Returns the
+  /// member type their indices refer to.
+  static AnyFunctionType *getNonEscapableLifetimeDependencies(
+      ValueDecl *decl, SmallVectorImpl<LifetimeDependenceInfo> &result) {
+    auto *fnTy = getMemberType(decl)->castTo<AnyFunctionType>();
+    auto interface = LifetimeDependentInterface::fromValueDecl(decl, fnTy);
+    filterEscapableLifetimeDependencies(
+        decl->getInnermostDeclContext()->getGenericSignatureOfContext(),
+        interface.getLifetimeDependencies(), result,
+        [&](unsigned index) { return interface.getSourceOrTargetType(index); });
+    return fnTy;
+  }
+
+  static std::string
+  printLifetimeDependencies(ArrayRef<LifetimeDependenceInfo> dependencies,
+                            ValueDecl *decl, AnyFunctionType *fnTy) {
+    if (dependencies.empty())
+      return "none";
+    // A method's `self` follows its parameters.
+    SmallVector<AnyFunctionType::Param, 4> params(fnTy->getParams());
+    if (auto *fn = dyn_cast<AbstractFunctionDecl>(decl))
+      if (fn->hasSelfInLifetimeDependenceIndices())
+        params.push_back(fn->getImplicitSelfDecl()->toFunctionParam());
+    std::string result;
+    llvm::raw_string_ostream os(result);
+    StreamPrinter printer(os);
+    for (const auto &dependence : dependencies)
+      printer.printLifetimeDependence(dependence, params, PrintOptions());
+    return StringRef(result).rtrim().str();
   }
 
   /// Describes an availability mismatch between a requirement and a candidate
@@ -4273,8 +4314,9 @@ private:
     if (cand->getKind() != req->getKind())
       return MatchOutcome::WrongDeclKind;
 
+    bool isCxx = cand->getAttrs().hasAttribute<CxxDeclAttr>();
     auto matchTypesOutcome =
-        matchTypes(getMemberType(req), getMemberType(cand), cand);
+        matchTypes(getMemberType(req, isCxx), getMemberType(cand, isCxx), cand);
     if (matchTypesOutcome == MatchOutcome::WrongType)
       return MatchOutcome::WrongType;
 
@@ -4456,6 +4498,18 @@ private:
       }
     }
 
+    // Swift callers rely on the dependencies the importer gives the C++
+    // declaration, so the implementation must declare the same ones.
+    SmallVector<LifetimeDependenceInfo, 2> reqDependencies, candDependencies;
+    auto *reqTy = getNonEscapableLifetimeDependencies(req, reqDependencies);
+    auto *candTy = getNonEscapableLifetimeDependencies(cand, candDependencies);
+    if (reqDependencies != candDependencies) {
+      diagnose(cand, diag::cxx_lifetime_dependence_mismatch, cand, cxxName,
+               printLifetimeDependencies(candDependencies, cand, candTy),
+               printLifetimeDependencies(reqDependencies, req, reqTy));
+      return true;
+    }
+
     // An lvalue reference parameter is implemented by an `inout` or a
     // `borrowing` parameter. C++ callers may pass aliasing references, which
     // such parameters let the optimizer assume away, so the implementation
@@ -4625,8 +4679,9 @@ private:
         break;
       }
 
+      bool isCxx = cand->getAttrs().hasAttribute<CxxDeclAttr>();
       diagnose(cand, diag::objc_implementation_sendability_mismatch, cand,
-               getMemberType(cand), getMemberType(req))
+               getMemberType(cand, isCxx), getMemberType(req, isCxx))
           .limitBehaviorWithPreconcurrency(behavior,
                                            /*preconcurrency*/ true);
       return;
@@ -4672,10 +4727,12 @@ private:
       diagnose(cand, diag::objc_implementation_wrong_decl_kind, cand, req);
       return;
 
-    case MatchOutcome::WrongType:
-      diagnose(cand, diag::objc_implementation_type_mismatch,
-               cand, getMemberType(cand), getMemberType(req));
+    case MatchOutcome::WrongType: {
+      bool isCxx = cand->getAttrs().hasAttribute<CxxDeclAttr>();
+      diagnose(cand, diag::objc_implementation_type_mismatch, cand,
+               getMemberType(cand, isCxx), getMemberType(req, isCxx));
       return;
+    }
 
     case MatchOutcome::WrongParameterOwnership:
       diagnose(cand, diag::objc_implementation_ownership_mismatch, cand);

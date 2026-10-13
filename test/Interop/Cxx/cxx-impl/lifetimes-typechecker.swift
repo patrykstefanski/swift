@@ -36,27 +36,25 @@ func viewMutableInt(_ x: inout CInt) -> IntView {
 }
 
 
-// Reference and pointer results.
+// Reference and pointer results. The importer records their dependencies,
+// which Swift drops as the results are Escapable, so the implementation
+// declares none.
 
-// expected-error@+2{{global function 'pick' of type '(borrowing CInt, borrowing CInt) -> UnsafePointer<CInt>' (aka '(borrowing Int32, borrowing Int32) -> UnsafePointer<Int32>') does not match type '@_lifetime(borrow a) (_ a: borrowing CInt, _ b: CInt) -> UnsafePointer<CInt>' (aka '(borrowing Int32, Int32) -> UnsafePointer<Int32>') declared by the header}}
 @unsafe @cxx @implementation
 func pick(_ a: borrowing CInt, _ b: borrowing CInt) -> UnsafePointer<CInt> {
   fatalError()
 }
 
-// expected-error@+2{{global function 'pickMutable' of type '(inout CInt) -> UnsafeMutablePointer<CInt>' (aka '(inout Int32) -> UnsafeMutablePointer<Int32>') does not match type '@_lifetime(&a) (_ a: inout CInt) -> UnsafeMutablePointer<CInt>' (aka '(inout Int32) -> UnsafeMutablePointer<Int32>') declared by the header}}
 @unsafe @cxx @implementation
 func pickMutable(_ a: inout CInt) -> UnsafeMutablePointer<CInt> {
   fatalError()
 }
 
-// expected-error@+2{{global function 'pointerToInt' of type '(borrowing CInt) -> UnsafePointer<CInt>?' (aka '(borrowing Int32) -> Optional<UnsafePointer<Int32>>') does not match type '@_lifetime(borrow x) (_ x: borrowing CInt) -> UnsafePointer<CInt>?' (aka '(borrowing Int32) -> Optional<UnsafePointer<Int32>>') declared by the header}}
 @unsafe @cxx @implementation
 func pointerToInt(_ x: borrowing CInt) -> UnsafePointer<CInt>? {
   fatalError()
 }
 
-// expected-error@+2{{global function 'pointerToTracked' of type '(borrowing Tracked) -> UnsafePointer<Tracked>?' does not match type '@_lifetime(borrow t) (_ t: borrowing Tracked) -> UnsafePointer<Tracked>?' declared by the header}}
 @unsafe @cxx @implementation
 func pointerToTracked(_ t: borrowing Tracked) -> UnsafePointer<Tracked>? {
   fatalError()
@@ -98,6 +96,7 @@ func viewNode(_ n: borrowing Node) -> IntView {
 
 extension Rejections {
   // The result depends on `x`, not on `self`.
+  // expected-error@+3{{instance method 'viewOfWrongSource' cannot implement C++ function 'viewOfWrongSource' because its lifetime dependencies '@_lifetime(borrow self)' do not match '@_lifetime(borrow x)' declared by the header}}
   @unsafe @cxx @implementation
   @_lifetime(borrow self)
   func viewOfWrongSource(_ x: borrowing CInt) -> IntView {
@@ -105,7 +104,7 @@ extension Rejections {
   }
 }
 
-// expected-error@+3{{global function 'viewOfWrongParam' of type '@_lifetime(borrow b) (_ a: borrowing CInt, _ b: borrowing CInt) -> IntView' (aka '@_lifetime(borrow b) (_ a: borrowing Int32, _ b: borrowing Int32) -> IntView') does not match type '@_lifetime(borrow a) (_ a: borrowing CInt, _ b: CInt) -> IntView' (aka '@_lifetime(borrow a) (_ a: borrowing Int32, _ b: Int32) -> IntView') declared by the header}}
+// expected-error@+3{{global function 'viewOfWrongParam' cannot implement C++ function 'viewOfWrongParam' because its lifetime dependencies '@_lifetime(borrow b)' do not match '@_lifetime(borrow a)' declared by the header}}
 @unsafe @cxx @implementation
 @_lifetime(borrow b)
 func viewOfWrongParam(_ a: borrowing CInt, _ b: borrowing CInt) -> IntView {

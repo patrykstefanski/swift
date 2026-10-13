@@ -53,6 +53,19 @@ int main() {
   printf("viewMutableInt: %s\n", where(v2.value, &y));
   // CHECK: viewMutableInt: in place
 
+  int a = 4, b = 5;
+  printf("pick: %s\n", where(&pick(a, b), &a));
+  // CHECK: pick: copy
+
+  printf("pickMutable: %s\n", where(&pickMutable(a), &a));
+  // CHECK: pickMutable: in place
+
+  printf("pointerToInt: %s\n", where(pointerToInt(a), &a));
+  // CHECK: pointerToInt: copy
+
+  printf("pointerToTracked: %s\n", where(pointerToTracked(t), &t));
+  // CHECK: pointerToTracked: in place
+
   Owner o{4};
   printf("Owner::get: %s\n", where(&o.get(), &o.data));
   // CHECK: Owner::get: copy

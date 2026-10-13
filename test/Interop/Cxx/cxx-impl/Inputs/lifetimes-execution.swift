@@ -27,6 +27,26 @@ public func viewMutableInt(_ x: inout CInt) -> IntView {
   return _overrideLifetime(IntView(value: p), mutating: &x)
 }
 
+@unsafe @cxx @implementation
+public func pick(_ a: borrowing CInt, _ b: borrowing CInt) -> UnsafePointer<CInt> {
+  return UnsafePointer<CInt>(Builtin.addressOfBorrow(a))
+}
+
+@unsafe @cxx @implementation
+public func pickMutable(_ a: inout CInt) -> UnsafeMutablePointer<CInt> {
+  return withUnsafeMutablePointer(to: &a) { $0 }
+}
+
+@unsafe @cxx @implementation
+public func pointerToInt(_ x: borrowing CInt) -> UnsafePointer<CInt>? {
+  return UnsafePointer<CInt>(Builtin.addressOfBorrow(x))
+}
+
+@unsafe @cxx @implementation
+public func pointerToTracked(_ t: borrowing Tracked) -> UnsafePointer<Tracked>? {
+  return UnsafePointer<Tracked>(Builtin.addressOfBorrow(t))
+}
+
 extension Owner {
   @cxx @implementation
   public func get() -> UnsafePointer<CInt> {

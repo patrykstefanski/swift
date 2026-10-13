@@ -2310,6 +2310,10 @@ ERROR(cxx_const_ref_param_requires_borrowing,none,
       "%kind0 cannot implement C++ function '%1' because parameter %2 must be "
       "'borrowing' to match a C++ 'const' reference",
       (ValueDecl *, StringRef, const ParamDecl *))
+ERROR(cxx_lifetime_dependence_mismatch,none,
+      "%kind0 cannot implement C++ function '%1' because its lifetime "
+      "dependencies '%2' do not match '%3' declared by the header",
+      (ValueDecl *, StringRef, StringRef, StringRef))
 ERROR(cxx_rvalue_references_unsupported,none,
       "%kind0 cannot implement C++ function '%1' because rvalue reference "
       "parameters and return types are not yet supported",
