@@ -4496,10 +4496,10 @@ static CanSILFunctionType getSILFunctionTypeForAbstractCFunction(
                             constant, std::nullopt, ProtocolConformanceRef());
 }
 
-/// If \p decl is a `@cxx @implementation` function that implements a C++
-/// method, return that method.
-static const clang::CXXMethodDecl *
-getImplementedCXXMethod(const ValueDecl *decl) {
+/// If \p decl is a `@cxx @implementation` function, return the C++ function
+/// or method it implements.
+static const clang::FunctionDecl *
+getImplementedCXXFunction(const ValueDecl *decl) {
   if (!decl->getAttrs().hasAttribute<CxxDeclAttr>())
     return nullptr;
   const Decl *interface = decl->getImplementedObjCDecl();
@@ -4510,7 +4510,15 @@ getImplementedCXXMethod(const ValueDecl *decl) {
                                    .getClangModuleLoader()
                                    ->getOriginalForVirtualThunk(thunk))
       interface = original;
-  return dyn_cast_or_null<clang::CXXMethodDecl>(interface->getClangDecl());
+  return dyn_cast_or_null<clang::FunctionDecl>(interface->getClangDecl());
+}
+
+/// If \p decl is a `@cxx @implementation` function that implements a C++
+/// method, return that method.
+static const clang::CXXMethodDecl *
+getImplementedCXXMethod(const ValueDecl *decl) {
+  return dyn_cast_or_null<clang::CXXMethodDecl>(
+      getImplementedCXXFunction(decl));
 }
 
 /// Returns \p type, the uncurried type of \p fn, a `@cxx @implementation`
@@ -5430,6 +5438,16 @@ getAbstractionPatternForConstant(TypeConverter &converter, ASTContext &ctx,
              "C++ method implementation not curried?");
       return AbstractionPattern::getCurriedCXXMethod(
           fnType, cxxMethod, bridgedFn->getImportAsMemberStatus());
+    }
+
+    // So is one of a C++ function, which may be a namespace member.
+    if (const auto *cxxFunction = getImplementedCXXFunction(bridgedFn)) {
+      if (numParameterLists == 1)
+        return AbstractionPattern(fnType, cxxFunction->getType().getTypePtr());
+      if (const auto *interface = dyn_cast_or_null<AbstractFunctionDecl>(
+              bridgedFn->getImplementedObjCDecl()))
+        return AbstractionPattern::getCurriedCFunctionAsMethod(fnType,
+                                                               interface);
     }
 
     // If this function only has a C entrypoint, create a Clang type to

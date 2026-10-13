@@ -405,14 +405,21 @@ static bool isParamListRepresentableInLanguage(const AbstractFunctionDecl *AFD,
     if (param->getTypeInContext()->hasError())
       return false;
 
+    // A `Cell<T>` or a `ConstCell<T>` spells a C++ reference to a `T`.
+    Type paramType = param->getTypeInContext();
+    bool isConst;
+    if (language == ForeignLanguage::Cxx)
+      if (Type referent =
+              importer::getCxxReferenceCellReferent(paramType, isConst))
+        paramType = referent;
+
     if (param->hasAttachedPropertyWrapper()) {
       if (param->getPropertyWrapperBackingPropertyType()->isRepresentableIn(
           language,
           const_cast<AbstractFunctionDecl *>(AFD)))
         continue;
-    } else if (param->getTypeInContext()->isRepresentableIn(
-          language,
-          const_cast<AbstractFunctionDecl *>(AFD))) {
+    } else if (paramType->isRepresentableIn(
+                   language, const_cast<AbstractFunctionDecl *>(AFD))) {
       continue;
     }
 
@@ -4178,6 +4185,48 @@ private:
     return type;
   }
 
+  /// Whether \p param, the parameter at \p index of a `@cxx` implementation of
+  /// \p req, spells a C++ reference as a `Cell` or a `ConstCell`.
+  static bool isCxxReferenceCell(const ValueDecl *req, const ParamDecl *param,
+                                 unsigned index) {
+    const auto *clangFD = dyn_cast_or_null<clang::FunctionDecl>(
+        getCxxInterface(req)->getClangDecl());
+    return clangFD && index < clangFD->getNumParams() &&
+           importer::getCxxReferenceCellProjection(
+               param->getInterfaceType(),
+               clangFD->getParamDecl(index)->getType());
+  }
+
+  /// Returns \p type, the member type of a `@cxx` implementation of \p req,
+  /// with each `Cell` or `ConstCell` parameter replaced by the imported type of
+  /// the C++ reference it spells.
+  static Type projectCxxReferenceCells(const ValueDecl *req, Type type) {
+    const auto *clangFD = dyn_cast_or_null<clang::FunctionDecl>(
+        getCxxInterface(req)->getClangDecl());
+    auto *fnTy = type->getAs<FunctionType>();
+    if (!clangFD || !fnTy)
+      return type;
+    SmallVector<AnyFunctionType::Param, 4> params(fnTy->getParams());
+    bool changed = false;
+    for (auto [index, param] : llvm::enumerate(params)) {
+      if (index >= clangFD->getNumParams())
+        break;
+      Type projected = importer::getCxxReferenceCellProjection(
+          param.getOldType(), clangFD->getParamDecl(index)->getType());
+      if (!projected)
+        continue;
+      param = AnyFunctionType::Param(
+          projected->getInOutObjectType(), param.getLabel(),
+          param.getParameterFlags().withInOut(projected->is<InOutType>()),
+          param.getInternalLabel());
+      changed = true;
+    }
+    if (!changed)
+      return type;
+    return FunctionType::get(params, fnTy->getYields(), fnTy->getResult(),
+                             fnTy->getExtInfo());
+  }
+
   /// Collects the lifetime dependencies of \p decl, a function or method, into
   /// \p result, without those targeting an Escapable value, which Swift drops
   /// (the importer records them for C++ reference results). Returns the
@@ -4315,8 +4364,11 @@ private:
       return MatchOutcome::WrongDeclKind;
 
     bool isCxx = cand->getAttrs().hasAttribute<CxxDeclAttr>();
+    Type candTy = getMemberType(cand, isCxx);
+    if (isCxx)
+      candTy = projectCxxReferenceCells(req, candTy);
     auto matchTypesOutcome =
-        matchTypes(getMemberType(req, isCxx), getMemberType(cand, isCxx), cand);
+        matchTypes(getMemberType(req, isCxx), candTy, cand);
     if (matchTypesOutcome == MatchOutcome::WrongType)
       return MatchOutcome::WrongType;
 
@@ -4334,8 +4386,13 @@ private:
       if (reqAFD->getForeignErrorConvention() !=
           candAFD->getForeignErrorConvention())
         return MatchOutcome::WrongForeignErrorConvention;
-      for (auto [reqParam, candParam] :
-           llvm::zip(*reqAFD->getParameters(), *candAFD->getParameters())) {
+      for (auto [index, params] : llvm::enumerate(llvm::zip(
+               *reqAFD->getParameters(), *candAFD->getParameters()))) {
+        auto [reqParam, candParam] = params;
+        // diagnoseInvalidCxxMatch checks the ownership of a `Cell` or a
+        // `ConstCell`.
+        if (isCxx && isCxxReferenceCell(req, candParam, index))
+          continue;
         // In case the ObjC owership is unowned and the swift is owned, the ObjC
         // thunk will make the necessary adjustment.
         if (reqParam->getValueOwnership() != candParam->getValueOwnership() &&
@@ -4466,6 +4523,16 @@ private:
       auto ownership = param->getValueOwnership();
       clang::QualType clangType = clangFD->getParamDecl(i)->getType();
 
+      auto fixItBorrowing = [&](InFlightDiagnostic &diag) {
+        diag.highlight(param->getSourceRange());
+        if (const auto *repr = param->getTypeRepr()) {
+          if (const auto *ownershipRepr = dyn_cast<OwnershipTypeRepr>(repr))
+            diag.fixItReplace(ownershipRepr->getSpecifierLoc(), "borrowing");
+          else
+            diag.fixItInsert(repr->getStartLoc(), "borrowing ");
+        }
+      };
+
       // A `const T &` parameter is borrowed for the call, so the implementation
       // must spell it `borrowing`.
       if (clangType->isLValueReferenceType() &&
@@ -4475,13 +4542,19 @@ private:
         auto diag = diagnose(param->getStartLoc(),
                              diag::cxx_const_ref_param_requires_borrowing, cand,
                              cxxName, param);
-        diag.highlight(param->getSourceRange());
-        if (const auto *repr = param->getTypeRepr()) {
-          if (const auto *ownershipRepr = dyn_cast<OwnershipTypeRepr>(repr))
-            diag.fixItReplace(ownershipRepr->getSpecifierLoc(), "borrowing");
-          else
-            diag.fixItInsert(repr->getStartLoc(), "borrowing ");
-        }
+        fixItBorrowing(diag);
+        return true;
+      }
+
+      // So is a `Cell` spelling a `T &` parameter.
+      if (importer::getCxxReferenceCellProjection(param->getInterfaceType(),
+                                                  clangType)) {
+        if (ownership == ValueOwnership::Shared)
+          continue;
+        auto diag = diagnose(param->getStartLoc(),
+                             diag::cxx_reference_cell_requires_borrowing, cand,
+                             cxxName, param);
+        fixItBorrowing(diag);
         return true;
       }
 
@@ -4514,9 +4587,21 @@ private:
     // `borrowing` parameter. C++ callers may pass aliasing references, which
     // such parameters let the optimizer assume away, so the implementation
     // must be marked `@unsafe`. A reference to a foreign reference type is
-    // exempt: the parameter carries the object, not the reference.
+    // exempt: the parameter carries the object, not the reference. So is a
+    // `Cell` or `ConstCell`, whose value may change under a borrow, unless the
+    // implementation can also reach C++ objects that the optimizer assumes no
+    // reference points into: `self`, or an object of foreign reference type.
     if (cand->getExplicitSafety() != ExplicitSafety::Unsafe) {
       auto *loader = cand->getASTContext().getClangModuleLoader();
+      bool hasSelf = cand->isInstanceMember();
+      bool hasForeignReference = llvm::any_of(*params, [](ParamDecl *param) {
+        Type type = param->getInterfaceType()->lookThroughAllOptionalTypes();
+        bool isConst;
+        if (Type referent =
+                importer::getCxxReferenceCellReferent(type, isConst))
+          type = referent->lookThroughAllOptionalTypes();
+        return type->isForeignReferenceType();
+      });
       bool diagnosed = false;
       for (unsigned i = 0, n = clangFD->getNumParams(); i != n; ++i) {
         const auto *clangParam = clangFD->getParamDecl(i);
@@ -4528,6 +4613,11 @@ private:
         if (refType->getPointeeType()->isRecordType() &&
             param->getInterfaceType()->isForeignReferenceType())
           continue;
+        bool isCell = !importer::getCxxReferenceCellProjection(
+                           param->getInterfaceType(), clangParam->getType())
+                           .isNull();
+        if (isCell && !hasSelf && !hasForeignReference)
+          continue;
 
         if (!diagnosed) {
           diagnose(cand, diag::cxx_references_require_unsafe, cand, cxxName)
@@ -4536,8 +4626,11 @@ private:
                   "@unsafe ");
           diagnosed = true;
         }
-        diagnose(param, diag::cxx_reference_param_aliasing, param,
-                 param->isInOut());
+        if (isCell)
+          diagnose(param, diag::cxx_reference_cell_aliasing, param, !hasSelf);
+        else
+          diagnose(param, diag::cxx_reference_param_aliasing, param,
+                   param->isInOut());
         diagnose(loader->importSourceLocation(clangParam->getLocation()),
                  diag::cxx_reference_param_declared_here,
                  clangParam->getIdentifier() != nullptr, clangParam)

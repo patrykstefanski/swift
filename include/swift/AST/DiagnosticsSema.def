@@ -2310,6 +2310,10 @@ ERROR(cxx_const_ref_param_requires_borrowing,none,
       "%kind0 cannot implement C++ function '%1' because parameter %2 must be "
       "'borrowing' to match a C++ 'const' reference",
       (ValueDecl *, StringRef, const ParamDecl *))
+ERROR(cxx_reference_cell_requires_borrowing,none,
+      "%kind0 cannot implement C++ function '%1' because parameter %2 must be "
+      "'borrowing' to match a C++ reference",
+      (ValueDecl *, StringRef, const ParamDecl *))
 ERROR(cxx_lifetime_dependence_mismatch,none,
       "%kind0 cannot implement C++ function '%1' because its lifetime "
       "dependencies '%2' do not match '%3' declared by the header",
@@ -2324,6 +2328,10 @@ ERROR(cxx_references_require_unsafe,none,
 NOTE(cxx_reference_param_aliasing,none,
      "C++ callers may %select{modify %kind0 through another reference during "
      "the call|violate exclusive access to 'inout' %kind0}1",
+     (ValueDecl *, bool))
+NOTE(cxx_reference_cell_aliasing,none,
+     "C++ callers may pass a reference into %select{'self'|an object of "
+     "foreign reference type}1 as %kind0",
      (ValueDecl *, bool))
 NOTE(cxx_reference_param_declared_here,none,
      "%select{parameter|%1}0 declared as a C++ reference here",

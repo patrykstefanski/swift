@@ -1021,6 +1021,17 @@ StringRef getCxxOperatorName(clang::OverloadedOperatorKind op);
 /// The overloaded operator named \p name, e.g. "operator==", if any.
 std::optional<clang::OverloadedOperatorKind> getCxxOperatorKind(StringRef name);
 
+/// A `@cxx @implementation` may spell a C++ lvalue reference parameter as a
+/// `Cell<T>` (`T &`) or a `ConstCell<T>` (`const T &`), where `T` is the
+/// imported referent. If \p type (possibly `inout`) is a `Cell<T>` or a
+/// `ConstCell<T>`, returns `T` and sets \p isConst; otherwise, a null type.
+Type getCxxReferenceCellReferent(Type type, bool &isConst);
+
+/// If \p type, the type of a parameter of a `@cxx @implementation` (possibly
+/// `inout`), spells \p clangType as a `Cell` or a `ConstCell`, returns the
+/// imported type of the reference (`inout T` or `T`); otherwise, a null type.
+Type getCxxReferenceCellProjection(Type type, clang::QualType clangType);
+
 /// Enumerate and import all members of the C++ namespace represented by
 /// \p namespaceEnum, invoking \p emit once for each newly imported member.
 ///

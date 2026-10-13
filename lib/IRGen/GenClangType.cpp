@@ -18,6 +18,7 @@
 
 #include "swift/AST/ASTContext.h"
 #include "swift/AST/Types.h"
+#include "swift/ClangImporter/ClangImporter.h"
 
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/CanonicalType.h"
@@ -40,6 +41,12 @@ clang::CanQualType IRGenModule::getClangType(SILParameterInfo params,
   auto paramTy = params.getSILStorageType(getSILModule(), funcTy,
                                           getMaximalTypeExpansionContext());
   auto clangType = getClangType(paramTy);
+  // A `Cell<T>` or `ConstCell<T>` parameter of a `@cxx @implementation` is a
+  // C++ reference to its `T`, laid out like `T`.
+  bool isConst;
+  if (Type referent =
+          importer::getCxxReferenceCellReferent(paramTy.getASTType(), isConst))
+    clangType = getClangType(referent->getCanonicalType());
   // @block_storage types must be @inout_aliasable and have
   // special lowering
   if (!paramTy.is<SILBlockStorageType>()) {

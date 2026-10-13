@@ -7288,11 +7288,23 @@ static bool haveSameParameterTypes(const ValueDecl *a, const ValueDecl *b) {
   auto paramsA = paramsOf(a), paramsB = paramsOf(b);
   if (paramsA.size() != paramsB.size())
     return false;
+  const auto *clangA = dyn_cast_or_null<clang::FunctionDecl>(a->getClangDecl());
+  const auto *clangB = dyn_cast_or_null<clang::FunctionDecl>(b->getClangDecl());
+  // A `Cell` or `ConstCell` parameter of an implementation stands for the
+  // C++ reference it spells in the other declaration.
+  auto typeOf = [](Type type, const clang::FunctionDecl *other,
+                   unsigned index) {
+    if (other && index < other->getNumParams())
+      if (Type projected = importer::getCxxReferenceCellProjection(
+              type, other->getParamDecl(index)->getType()))
+        return projected;
+    return type;
+  };
   for (auto i : indices(paramsA)) {
     // Compare canonical types, on the same `getOldType()`s, exactly what
     // `ObjCImplementationChecker` does.
-    if (paramsA[i].getOldType()->getCanonicalType() !=
-        paramsB[i].getOldType()->getCanonicalType())
+    if (typeOf(paramsA[i].getOldType(), clangB, i)->getCanonicalType() !=
+        typeOf(paramsB[i].getOldType(), clangA, i)->getCanonicalType())
       return false;
   }
   return true;
@@ -9927,6 +9939,37 @@ importer::getCxxOperatorKind(StringRef name) {
       return op;
   }
   return std::nullopt;
+}
+
+Type importer::getCxxReferenceCellReferent(Type type, bool &isConst) {
+  if (!type->getASTContext().LangOpts.hasFeature(Feature::Cells))
+    return Type();
+  if (auto *inOut = type->getAs<InOutType>())
+    type = inOut->getObjectType();
+  auto *cell = type->getAs<StructType>();
+  if (!cell || !cell->hasGenericArgs() ||
+      !cell->getDecl()->getModuleContext()->isStdlibModule())
+    return Type();
+  StringRef name = cell->getDecl()->getName().str();
+  if (name != "Cell" && name != "ConstCell")
+    return Type();
+  isConst = name == "ConstCell";
+  return cell->getGenericArgs()[0];
+}
+
+Type importer::getCxxReferenceCellProjection(Type type,
+                                             clang::QualType clangType) {
+  bool isConst;
+  Type referent = getCxxReferenceCellReferent(type, isConst);
+  if (!referent || !clangType->isLValueReferenceType() ||
+      clangType->getPointeeType().isConstQualified() != isConst)
+    return Type();
+  // A reference to an object of a foreign reference type imports as the
+  // object, so the referent is not a `T`.
+  if (clangType->getPointeeType()->isRecordType() &&
+      referent->isForeignReferenceType())
+    return Type();
+  return isConst ? referent : InOutType::get(referent);
 }
 
 bool importer::isSymbolicCircularBase(const clang::CXXRecordDecl *symbolicClass,
