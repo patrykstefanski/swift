@@ -10123,6 +10123,30 @@ Type ParamDecl::getVarargBaseTy(Type VarArgT) {
   return T;
 }
 
+bool ParamDecl::isAddressableForCxxImplementation() const {
+  auto *fn = dyn_cast<AbstractFunctionDecl>(getDeclContext());
+  if (!fn || !fn->getAttrs().hasAttribute<CxxDeclAttr>())
+    return false;
+  auto *interface =
+      dyn_cast_or_null<AbstractFunctionDecl>(fn->getImplementedObjCDecl());
+  if (!interface)
+    return false;
+  if (auto *thunk = dyn_cast<FuncDecl>(interface))
+    if (auto *original =
+            getASTContext().getClangModuleLoader()->getOriginalForVirtualThunk(
+                thunk))
+      interface = original;
+
+  if (isSelfParameter())
+    return interface->getAttrs().hasAttribute<AddressableSelfAttr>();
+  auto *params = fn->getParameters();
+  auto *interfaceParams = interface->getParameters();
+  for (unsigned i : range(std::min(params->size(), interfaceParams->size())))
+    if (params->get(i) == this)
+      return interfaceParams->get(i)->isAddressable();
+  return false;
+}
+
 AnyFunctionType::Param ParamDecl::toFunctionParam(Type type) const {
   if (!type) {
     type = getInterfaceType();

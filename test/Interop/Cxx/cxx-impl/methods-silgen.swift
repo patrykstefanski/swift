@@ -4,7 +4,8 @@
 // method is lowered with the C++ method convention: `self` is the last SIL
 // parameter and is passed indirectly, `@in_guaranteed` for a `const` method
 // and `@inout` for a `mutating` one, so that the entry point receives it as
-// C++'s `this`.
+// C++'s `this`. Like that of the imported method, `self` is addressable: the
+// body reads it through `this` instead of a copy loaded in the prolog.
 
 // RUN: %target-swift-emit-silgen \
 // RUN:   -module-name main \
@@ -46,8 +47,7 @@ extension Counter {
   // int Counter::get() const;
   // CHECK-LABEL: sil [asmname "{{.*}}get{{.*}}"] [ossa] @$sSo7CounterV4mainE3gets5Int32VyFTo : $@convention(cxx_method) (@in_guaranteed Counter) -> Int32 {
   // CHECK:       bb0([[SELF_ADDR:%.*]] : $*Counter):
-  // CHECK:         [[SELF:%.*]] = load [trivial] [[SELF_ADDR]]
-  // CHECK:         debug_value [[SELF]], let, name "self", argno 1
+  // CHECK:         debug_value [[SELF_ADDR]], let, name "self", argno 1, expr op_deref
   @cxx @implementation
   public func get() -> Int32 { return value }
 
@@ -62,16 +62,15 @@ extension Counter {
   // int Counter::overloadedByArity() const;
   // CHECK-LABEL: sil [asmname "{{.*}}overloadedByArity{{.*}}"] [ossa] @$sSo7CounterV4mainE17overloadedByAritys5Int32VyFTo : $@convention(cxx_method) (@in_guaranteed Counter) -> Int32 {
   // CHECK:       bb0([[SELF_ADDR:%.*]] : $*Counter):
-  // CHECK:         [[SELF:%.*]] = load [trivial] [[SELF_ADDR]]
-  // CHECK:         debug_value [[SELF]], let, name "self", argno 1
+  // CHECK:         debug_value [[SELF_ADDR]], let, name "self", argno 1, expr op_deref
   @cxx @implementation
   public func overloadedByArity() -> Int32 { return value }
 
   // int Counter::overloadedByArity(int x) const;
   // CHECK-LABEL: sil [asmname "{{.*}}overloadedByArity{{.*}}"] [ossa] @$sSo7CounterV4mainE17overloadedByArityys5Int32VAFFTo : $@convention(cxx_method) (Int32, @in_guaranteed Counter) -> Int32 {
   // CHECK:       bb0(%0 : $Int32, [[SELF_ADDR:%.*]] : $*Counter):
+  // CHECK:         debug_value [[SELF_ADDR]], let, name "self", argno 2, expr op_deref
   // CHECK:         [[SELF:%.*]] = load [trivial] [[SELF_ADDR]]
-  // CHECK:         debug_value [[SELF]], let, name "self", argno 2
   // CHECK:         [[HELPER:%.*]] = function_ref @$sSo7CounterV4mainE19plainInstanceHelpers5Int32VyF : $@convention(method) (Counter) -> Int32
   // CHECK:         apply [[HELPER]]([[SELF]]) : $@convention(method) (Counter) -> Int32
   @cxx @implementation
@@ -82,8 +81,7 @@ extension Counter {
   // int Counter::renamedTarget() const;
   // CHECK-LABEL: sil [asmname "{{.*}}renamedTarget{{.*}}"] [ossa] @$sSo7CounterV4mainE12swiftRenameds5Int32VyFTo : $@convention(cxx_method) (@in_guaranteed Counter) -> Int32 {
   // CHECK:       bb0([[SELF_ADDR:%.*]] : $*Counter):
-  // CHECK:         [[SELF:%.*]] = load [trivial] [[SELF_ADDR]]
-  // CHECK:         debug_value [[SELF]], let, name "self", argno 1
+  // CHECK:         debug_value [[SELF_ADDR]], let, name "self", argno 1, expr op_deref
   @cxx(renamedTarget) @implementation
   public func swiftRenamed() -> Int32 { return value }
 }
@@ -97,8 +95,7 @@ extension Pair {
   // int Pair::adjust(int x) const;
   // CHECK-LABEL: sil [asmname "{{.*}}adjust{{.*}}"] [ossa] @$sSo4PairV4mainE6adjustys5Int32VAFFTo : $@convention(cxx_method) (Int32, @in_guaranteed Pair) -> Int32 {
   // CHECK:       bb0(%0 : $Int32, [[SELF_ADDR:%.*]] : $*Pair):
-  // CHECK:         [[SELF:%.*]] = load [trivial] [[SELF_ADDR]]
-  // CHECK:         debug_value [[SELF]], let, name "self", argno 2
+  // CHECK:         debug_value [[SELF_ADDR]], let, name "self", argno 2, expr op_deref
   @cxx @implementation
   public func adjust(_ x: Int32) -> Int32 { return value + x }
 
@@ -126,8 +123,7 @@ extension Holder {
   // Triple Holder::spread(int k) const;
   // CHECK-LABEL: sil [asmname "{{.*}}spread{{.*}}"] [ossa] @$sSo6HolderV4mainE6spreadySo6TripleVs5Int32VFTo : $@convention(cxx_method) (Int32, @in_guaranteed Holder) -> Triple {
   // CHECK:       bb0(%0 : $Int32, [[SELF_ADDR:%.*]] : $*Holder):
-  // CHECK:         [[SELF:%.*]] = load [trivial] [[SELF_ADDR]]
-  // CHECK:         debug_value [[SELF]], let, name "self", argno 2
+  // CHECK:         debug_value [[SELF_ADDR]], let, name "self", argno 2, expr op_deref
   @cxx @implementation
   public func spread(_ k: Int32) -> Triple {
     return Triple(a: CLongLong(value), b: CLongLong(k), c: CLongLong(value + k))

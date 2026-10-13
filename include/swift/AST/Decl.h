@@ -7742,6 +7742,11 @@ public:
       removeFlag(Flag::IsAddressable);
   }
 
+  /// Whether this parameter (or `self`) of a `@cxx @implementation` function
+  /// is addressable because the importer makes that of the C++ declaration it
+  /// implements addressable.
+  bool isAddressableForCxxImplementation() const;
+
   /// Whether or not this parameter is marked with '_const'.
   bool isCompileTimeLiteral() const {
     return ArgumentNameAndFlags.getInt().contains(

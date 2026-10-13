@@ -4513,6 +4513,34 @@ getImplementedCXXMethod(const ValueDecl *decl) {
   return dyn_cast_or_null<clang::CXXMethodDecl>(interface->getClangDecl());
 }
 
+/// Returns \p type, the uncurried type of \p fn, a `@cxx @implementation`
+/// function, with each parameter (and `self`, which comes last) addressable
+/// where that of the C++ declaration \p fn implements is.
+static CanAnyFunctionType
+withCxxImplementationAddressability(AbstractFunctionDecl *fn,
+                                    CanAnyFunctionType type) {
+  auto *params = fn->getParameters();
+  SmallVector<AnyFunctionType::Param, 4> newParams;
+  bool changed = false;
+  for (auto [index, param] : llvm::enumerate(type->getParams())) {
+    const ParamDecl *paramDecl =
+        index < params->size() ? params->get(index) : fn->getImplicitSelfDecl();
+    auto flags = param.getParameterFlags();
+    if (paramDecl && !flags.isAddressable() &&
+        paramDecl->isAddressableForCxxImplementation()) {
+      flags = flags.withAddressable(true);
+      changed = true;
+    }
+    newParams.push_back(param.withFlags(flags));
+  }
+  if (!changed)
+    return type;
+  return CanAnyFunctionType::get(type.getOptGenericSignature(),
+                                 AnyFunctionType::CanParamArrayRef(newParams),
+                                 type.getYields(), type.getResult(),
+                                 type->getExtInfo());
+}
+
 /// Try to find a clang method declaration for the given function.
 static const clang::Decl *findClangMethod(ValueDecl *method) {
   if (auto *methodFn = dyn_cast<FuncDecl>(method)) {
@@ -4827,6 +4855,10 @@ static CanSILFunctionType getUncachedSILFunctionTypeForConstant(
                 decl->getImplementedObjCDecl()))
           foreignInfo.self = interface->getImportAsMemberStatus();
       }
+      // Its parameters are addressable where those of that declaration are.
+      if (decl->getAttrs().hasAttribute<CxxDeclAttr>())
+        origLoweredInterfaceType = withCxxImplementationAddressability(
+            cast<AbstractFunctionDecl>(decl), origLoweredInterfaceType);
 
       return getSILFunctionTypeForClangDecl(
           TC, clangDecl, origLoweredInterfaceType, origLoweredInterfaceType,

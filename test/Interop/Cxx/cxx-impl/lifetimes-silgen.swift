@@ -1,6 +1,8 @@
 // Verifies how a `@cxx @implementation` function whose C++ declaration carries
-// lifetime annotations is lowered. A lifetimebound reference parameter keeps
-// the C++ convention, and a non-escapable result depends on it.
+// lifetime annotations is lowered. A reference parameter keeps the C++
+// convention and, like that of the imported declaration, is addressable: the
+// prolog keeps the C++ referent's address instead of loading a copy, and a
+// non-escapable result depends on that address.
 
 // RUN: %target-swift-emit-silgen \
 // RUN:   -module-name main \
@@ -27,9 +29,10 @@ public func viewTracked(_ t: borrowing Tracked) -> TrackedView {
 }
 
 // IntView viewInt(const int &x [[clang::lifetimebound]]);
-// CHECK-LABEL: sil [asmname "{{.*}}viewInt{{.*}}"] [ossa] @$s4main7viewIntySo0C4ViewVs5Int32VFTo : $@convention(c) (@in_guaranteed Int32) -> @lifetime(borrow 0) @owned IntView {
+// CHECK-LABEL: sil [asmname "{{.*}}viewInt{{.*}}"] [ossa] @$s4main7viewIntySo0C4ViewVs5Int32VFTo : $@convention(c) (@in_guaranteed Int32) -> @lifetime(borrow address 0) @owned IntView {
 // CHECK:       bb0(%0 : @noImplicitCopy $*Int32):
-// CHECK-NEXT:    load [trivial] %0
+// CHECK-NOT:     load [trivial]
+// CHECK:       } // end sil function '$s4main7viewIntySo0C4ViewVs5Int32VFTo'
 @unsafe @cxx @implementation
 @_lifetime(borrow x)
 public func viewInt(_ x: borrowing CInt) -> IntView {
@@ -37,7 +40,7 @@ public func viewInt(_ x: borrowing CInt) -> IntView {
 }
 
 // IntView viewMutableInt(int &x [[clang::lifetimebound]]);
-// CHECK-LABEL: sil [asmname "{{.*}}viewMutableInt{{.*}}"] [ossa] @$s4main14viewMutableIntySo0D4ViewVs5Int32VzFTo : $@convention(c) (@inout Int32) -> @lifetime(borrow 0) @owned IntView {
+// CHECK-LABEL: sil [asmname "{{.*}}viewMutableInt{{.*}}"] [ossa] @$s4main14viewMutableIntySo0D4ViewVs5Int32VzFTo : $@convention(c) (@inout Int32) -> @lifetime(borrow address 0) @owned IntView {
 @unsafe @cxx @implementation
 @_lifetime(&x)
 public func viewMutableInt(_ x: inout CInt) -> IntView {
@@ -48,26 +51,28 @@ public func viewMutableInt(_ x: inout CInt) -> IntView {
 // const int &pick(const int &a [[clang::lifetimebound]], const int &b);
 // CHECK-LABEL: sil [asmname "{{.*}}pick{{.*}}"] [ossa] @$s4main4pickySPys5Int32VGAD_ADtFTo : $@convention(c) (@in_guaranteed Int32, @in_guaranteed Int32) -> UnsafePointer<Int32> {
 // CHECK:       bb0(%0 : @noImplicitCopy $*Int32, %1 : @noImplicitCopy $*Int32):
-// CHECK-NEXT:    load [trivial] %0
+// CHECK-NOT:     load [trivial]
+// CHECK:       } // end sil function '$s4main4pickySPys5Int32VGAD_ADtFTo'
 @unsafe @cxx @implementation
 public func pick(_ a: borrowing CInt, _ b: borrowing CInt) -> UnsafePointer<CInt> {
-  return UnsafePointer(bitPattern: 1)!
+  fatalError()
 }
 
 extension Owner {
   // const int &Owner::get() const [[clang::lifetimebound]];
   // CHECK-LABEL: sil [asmname "{{.*}}get{{.*}}"] [ossa] @$sSo5OwnerV4mainE3getSPys5Int32VGyFTo : $@convention(cxx_method) (@in_guaranteed Owner) -> UnsafePointer<Int32> {
   // CHECK:       bb0(%0 : $*Owner):
-  // CHECK-NEXT:    load [trivial] %0
+  // CHECK-NOT:     load [trivial]
+  // CHECK:       } // end sil function '$sSo5OwnerV4mainE3getSPys5Int32VGyFTo'
   @cxx @implementation
   public func get() -> UnsafePointer<CInt> {
-    return UnsafePointer(bitPattern: 1)!
+    fatalError()
   }
 
   // IntView Owner::view() const [[clang::lifetimebound]];
   // CHECK-LABEL: sil [asmname "{{.*}}view{{.*}}"] [ossa] @$sSo5OwnerV4mainE4viewSo7IntViewVyFTo : $@convention(cxx_method) (@in_guaranteed Owner) -> @lifetime(borrow address_for_deps 0) @owned IntView {
   // CHECK:       bb0(%0 : $*Owner):
-  // CHECK-NOT:     load [trivial] %0
+  // CHECK-NOT:     load [trivial]
   // CHECK:       } // end sil function '$sSo5OwnerV4mainE4viewSo7IntViewVyFTo'
   @cxx @implementation
   @_lifetime(borrow self)
@@ -76,9 +81,10 @@ extension Owner {
   }
 
   // IntView Owner::viewOf(const int &x [[clang::lifetimebound]]) const;
-  // CHECK-LABEL: sil [asmname "{{.*}}viewOf{{.*}}"] [ossa] @$sSo5OwnerV4mainE6viewOfySo7IntViewVs5Int32VFTo : $@convention(cxx_method) (@in_guaranteed Int32, @in_guaranteed Owner) -> @lifetime(borrow 0) @owned IntView {
+  // CHECK-LABEL: sil [asmname "{{.*}}viewOf{{.*}}"] [ossa] @$sSo5OwnerV4mainE6viewOfySo7IntViewVs5Int32VFTo : $@convention(cxx_method) (@in_guaranteed Int32, @in_guaranteed Owner) -> @lifetime(borrow address 0) @owned IntView {
   // CHECK:       bb0(%0 : @noImplicitCopy $*Int32, %1 : $*Owner):
-  // CHECK-NEXT:    load [trivial] %0
+  // CHECK-NOT:     load [trivial]
+  // CHECK:       } // end sil function '$sSo5OwnerV4mainE6viewOfySo7IntViewVs5Int32VFTo'
   @unsafe @cxx @implementation
   @_lifetime(borrow x)
   public func viewOf(_ x: borrowing CInt) -> IntView {
@@ -86,7 +92,8 @@ extension Owner {
   }
 }
 
-// A foreign reference type is passed as the reference itself.
+// A foreign reference type is passed as the reference itself, which is not
+// addressable.
 // IntView viewNode(Node &n [[clang::lifetimebound]]);
 // CHECK-LABEL: sil [asmname "{{.*}}viewNode{{.*}}"] [ossa] @$s4main8viewNodeySo7IntViewVSo0C0VFTo : $@convention(c) (Node) -> @lifetime(borrow 0) @owned IntView {
 @cxx @implementation

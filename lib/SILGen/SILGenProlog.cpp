@@ -821,7 +821,7 @@ private:
       // addressability can be implied by a scoped dependency or a borrow
       // dependency.
       bool isAddressable =
-          pd->isAddressable() ||
+          pd->isAddressable() || pd->isAddressableForCxxImplementation() ||
           (ScopedDependencies.contains(pd) &&
            SGF.getTypeProperties(origType, substType)
                .isAddressableForDependencies()) ||
